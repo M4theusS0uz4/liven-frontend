@@ -1,0 +1,11 @@
+﻿import { Building2, Map, Package } from 'lucide-react';
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import CondominiumMapPage from './pages/CondominiumMapPage';
+import DeliveriesPage from './pages/DeliveriesPage';
+
+function Dashboard() {
+  return <section className="space-y-8"><header><p className="text-brand text-xs font-black tracking-[.25em]">LIVEN LOCAL</p><h1 className="mt-2 text-4xl font-black">Portaria inteligente</h1><p className="mt-2 text-white/45">Operação local do condomínio, sem serviços externos.</p></header><div className="grid gap-4 sm:grid-cols-2"><Link className="glass rounded-3xl p-7 transition hover:bg-white/[.07]" to="/map"><Map className="text-brand"/><h2 className="mt-5 text-xl font-black">Mapa do condomínio</h2><p className="mt-2 text-sm text-white/45">Visualize blocos e unidades.</p></Link><Link className="glass rounded-3xl p-7 transition hover:bg-white/[.07]" to="/deliveries"><Package className="text-brand"/><h2 className="mt-5 text-xl font-black">Entregas</h2><p className="mt-2 text-sm text-white/45">Registre e acompanhe encomendas.</p></Link></div></section>;
+}
+
+function Layout() { const location = useLocation(); const links = [{ to: '/', label: 'Visão geral', icon: Building2 }, { to: '/map', label: 'Mapa', icon: Map }, { to: '/deliveries', label: 'Entregas', icon: Package }]; return <div className="min-h-screen bg-background"><header className="border-b border-white/10 bg-surface/80 px-5 py-4 backdrop-blur"><div className="mx-auto flex max-w-7xl items-center gap-8"><Link className="font-black tracking-tight" to="/">LIVEN <span className="text-brand">LOCAL</span></Link><nav className="flex gap-1">{links.map(({to,label,icon:Icon})=><Link key={to} to={to} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${location.pathname===to?'bg-brand text-white':'text-white/50 hover:text-white'}`}><Icon size={16}/>{label}</Link>)}</nav></div></header><main className="mx-auto max-w-7xl p-5 sm:p-8"><Routes><Route path="/" element={<Dashboard/>}/><Route path="/map" element={<CondominiumMapPage/>}/><Route path="/deliveries" element={<DeliveriesPage/>}/><Route path="*" element={<Navigate to="/" replace/>}/></Routes></main></div>; }
+export default function App() { return <BrowserRouter><Layout/></BrowserRouter>; }
