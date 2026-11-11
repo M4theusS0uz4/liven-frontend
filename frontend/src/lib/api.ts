@@ -181,11 +181,12 @@ export const verificarOtp = (payload: OtpVerifyInput) => apiRequest('/auth/verif
 
 // Registration has no tenant or profile; AuthContext establishes the global session.
 // The backend keeps duplicate requests generic and creates accounts only on HTTP 201.
-export async function solicitarCadastroOtp(email: string, senha: string): Promise<{ retryAfter: number | null }> {
+export async function solicitarCadastroOtp(email: string, senha: string): Promise<{ retryAfter: number | null; codigo_mock?: string }> {
   const response = await sendRequest('/auth/register/request-otp', {
     method: 'POST', body: JSON.stringify({ email: normalizarEmail(email), senha }),
   }, null, true) as Response;
-  return { retryAfter: retryDelay(response.headers.get('Retry-After')) };
+  const body = await response.json().catch(() => null) as OtpResponse | null;
+  return { retryAfter: retryDelay(response.headers.get('Retry-After')), codigo_mock: body?.codigo_mock };
 }
 
 export async function verificarCadastroOtp(email: string, codigo: string, senha: string, definirSenha = false): Promise<GlobalAuthResponse> {
@@ -216,16 +217,18 @@ export async function entrarComSenha(email: string, senha: string): Promise<Glob
   return response;
 }
 
-export async function reenviarCadastroOtp(email: string): Promise<{ retryAfter: number | null }> {
+export async function reenviarCadastroOtp(email: string): Promise<{ retryAfter: number | null; codigo_mock?: string }> {
   const response = await sendRequest('/auth/register/resend-otp', { method: 'POST',
     body: JSON.stringify({ email: normalizarEmail(email) }) }, null, true) as Response;
-  return { retryAfter: retryDelay(response.headers.get('Retry-After')) };
+  const body = await response.json().catch(() => null) as OtpResponse | null;
+  return { retryAfter: retryDelay(response.headers.get('Retry-After')), codigo_mock: body?.codigo_mock };
 }
 
-export async function solicitarDefinicaoSenha(email: string, senha: string): Promise<{ retryAfter: number | null }> {
+export async function solicitarDefinicaoSenha(email: string, senha: string): Promise<{ retryAfter: number | null; codigo_mock?: string }> {
   const response = await sendRequest('/auth/password/setup/request-otp', { method: 'POST',
     body: JSON.stringify({ email: normalizarEmail(email), senha }) }, null, true) as Response;
-  return { retryAfter: retryDelay(response.headers.get('Retry-After')) };
+  const body = await response.json().catch(() => null) as OtpResponse | null;
+  return { retryAfter: retryDelay(response.headers.get('Retry-After')), codigo_mock: body?.codigo_mock };
 }
 
 export const obterContaGlobalAtual = () => apiRequest('/auth/global/me') as Promise<ContaGlobal>;

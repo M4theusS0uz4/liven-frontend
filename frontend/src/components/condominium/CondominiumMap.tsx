@@ -5,7 +5,7 @@ import type { Mapa, MapaUnidade } from '../../lib/api';
 export type StatusUnidade = 'ocupada' | 'vazia' | 'alerta';
 export interface UnidadeMapa { id: string; bloco: string; numero: string; andar?: number | null; tipoResidencia?: 'casa' | 'apartamento'; status: StatusUnidade; }
 
-type Props = { unidades: UnidadeMapa[]; mapa?: Mapa; onSelect?: (unidade: UnidadeMapa) => void };
+type Props = { unidades: UnidadeMapa[]; mapa?: Mapa; onSelect?: (unidade: UnidadeMapa) => void; onPlace?: (x: number, y: number) => void; placementMode?: boolean; cameraAction?: { id: number; action: 'fit' | 'top' | 'rotate' } | null };
 
 const unitColors: Record<StatusUnidade, number> = { ocupada: 0x17845b, vazia: 0xb5c4cb, alerta: 0xe2a72f };
 const areaColors: Record<string, number> = {
@@ -50,11 +50,15 @@ function makeLabel(text: string, color: string) {
   return label;
 }
 
-export default function CondominiumMap({ unidades, mapa, onSelect }: Props) {
+export default function CondominiumMap({ unidades, mapa, onSelect, onPlace, onMoveArea, placementMode = false, cameraAction }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const selectedRef = useRef<UnidadeMapa | null>(null);
   const callbackRef = useRef(onSelect);
+  const placeRef = useRef(onPlace);
+  const placementRef = useRef(placementMode);
   callbackRef.current = onSelect;
+  placeRef.current = onPlace;
+  placementRef.current = placementMode;
   const sceneKey = JSON.stringify([mapa, unidades]);
 
   useEffect(() => {
@@ -79,8 +83,8 @@ export default function CondominiumMap({ unidades, mapa, onSelect }: Props) {
     sun.castShadow = false;
     scene.add(sun);
 
-    const width = Math.max(20, mapa?.largura || 100);
-    const height = Math.max(20, mapa?.altura || 70);
+    const width = Math.max(20, mapa?.largura || 100, ...(mapa?.areas_comuns ?? []).map((area) => area.x + area.largura / 2 + 5));
+    const height = Math.max(20, mapa?.altura || 70, ...(mapa?.areas_comuns ?? []).map((area) => area.y + area.altura / 2 + 5));
     const tipoCondominio = mapa?.tipo_condominio ?? 'vertical';
     const scale = Math.min(0.22, 36 / Math.max(width, height));
     const mapX = (value: number) => (value - width / 2) * scale;
@@ -301,13 +305,16 @@ export default function CondominiumMap({ unidades, mapa, onSelect }: Props) {
       }
 
       const label = makeLabel(area.nome, '#34564d');
+      label.userData.areaId = area.id;
       label.position.set(x, 0.92, z);
+      base.userData.areaId = area.id;
       world.add(label);
     });
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let dragging = false;
+    let moved = false;
     let previousX = 0;
     let previousY = 0;
     let yaw = 0.65;
@@ -317,6 +324,13 @@ export default function CondominiumMap({ unidades, mapa, onSelect }: Props) {
     const updateCamera = () => {
       camera.position.set(Math.sin(yaw) * Math.cos(pitch) * distance, Math.sin(pitch) * distance, Math.cos(yaw) * Math.cos(pitch) * distance);
       camera.lookAt(0, 0, 0);
+    };
+    const cameraControl = (event: Event) => {
+      const action = (event as CustomEvent<{ action: 'fit' | 'top' | 'rotate' }>).detail?.action;
+      if (action === 'top') { yaw = 0; pitch = 1.5; distance = Math.max(16, mapSpan * 1.55); }
+      else if (action === 'rotate') { yaw = 0.65; pitch = 0.76; distance = Math.max(16, mapSpan * 1.55); }
+      else { distance = Math.max(16, mapSpan * 1.55); }
+      updateCamera();
     };
     const resize = () => {
       const bounds = canvas.getBoundingClientRect();
@@ -328,12 +342,14 @@ export default function CondominiumMap({ unidades, mapa, onSelect }: Props) {
     };
     const pointerDown = (event: PointerEvent) => {
       dragging = true;
+      moved = false;
       previousX = event.clientX;
       previousY = event.clientY;
       canvas.setPointerCapture(event.pointerId);
     };
     const pointerMove = (event: PointerEvent) => {
       if (!dragging) return;
+      if (Math.abs(event.clientX - previousX) + Math.abs(event.clientY - previousY) > 3) moved = true;
       yaw -= (event.clientX - previousX) * 0.008;
       pitch = Math.max(0.35, Math.min(1.35, pitch + (event.clientY - previousY) * 0.008));
       previousX = event.clientX;
@@ -346,11 +362,25 @@ export default function CondominiumMap({ unidades, mapa, onSelect }: Props) {
       updateCamera();
     };
     const click = (event: MouseEvent) => {
-      if (dragging) return;
+      if (moved) return;
       const bounds = canvas.getBoundingClientRect();
       pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
       pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
+      const areaHit = raycaster.intersectObjects(world.children).find((entry) => entry.object.userData.areaId);
+      if (areaHit && !placementRef.current) {
+        const areaId = Number(areaHit.object.userData.areaId);
+        canvas.dataset.dragArea = String(areaId);
+        return;
+      }
+      if (placementRef.current) {
+        const groundHit = raycaster.intersectObject(ground);
+        if (groundHit[0]) {
+          const point = groundHit[0].point;
+          placeRef.current?.(Math.max(0, Math.min(width, point.x / scale + width / 2)), Math.max(0, Math.min(height, point.z / scale + height / 2)));
+        }
+        return;
+      }
       const hit = raycaster.intersectObjects(world.children).find((entry) => entry.object.userData.unitId);
       if (!hit) return;
       const unit = unitById.get(String(hit.object.userData.unitId));
@@ -366,6 +396,7 @@ export default function CondominiumMap({ unidades, mapa, onSelect }: Props) {
     canvas.addEventListener('pointerleave', pointerUp);
     canvas.addEventListener('wheel', wheel, { passive: true });
     canvas.addEventListener('click', click);
+    canvas.addEventListener('map-camera', cameraControl);
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
     resize();
@@ -389,6 +420,7 @@ export default function CondominiumMap({ unidades, mapa, onSelect }: Props) {
       canvas.removeEventListener('pointerleave', pointerUp);
       canvas.removeEventListener('wheel', wheel);
       canvas.removeEventListener('click', click);
+      canvas.removeEventListener('map-camera', cameraControl);
       renderer.dispose();
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
@@ -408,5 +440,11 @@ export default function CondominiumMap({ unidades, mapa, onSelect }: Props) {
     };
   }, [mapa, unidades]);
 
-  return <canvas key={sceneKey} ref={canvasRef} className="block h-[min(68vh,700px)] min-h-105 w-full cursor-grab touch-none active:cursor-grabbing" aria-label="Mapa 3D interativo do condomínio"/>;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !cameraAction) return;
+    canvas.dispatchEvent(new CustomEvent('map-camera', { detail: cameraAction }));
+  }, [cameraAction]);
+
+  return <canvas key={sceneKey} ref={canvasRef} className={`block h-[min(68vh,700px)] min-h-105 w-full touch-none ${placementMode ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`} aria-label="Mapa 3D interativo do condomínio"/>;
 }

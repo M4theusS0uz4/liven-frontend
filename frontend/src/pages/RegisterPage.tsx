@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import PasswordInput from '../components/PasswordInput';
 import OtpCodeInput from '../components/OtpCodeInput';
 import { ApiError, solicitarCadastroOtp, reenviarCadastroOtp, solicitarDefinicaoSenha } from '../lib/api';
-import { mascararEmail, normalizarEmail } from '../lib/otp';
+import { codigoDemonstrativo, mascararEmail, normalizarEmail } from '../lib/otp';
 
 // UI fallback only; the backend remains responsible for enforcing its limits.
 let resendAt = 0;
@@ -56,7 +56,10 @@ export default function RegisterPage({ definirSenha = false }: { definirSenha?: 
         resendAt = Math.max(resendAt, Date.now() + (response.retryAfter ?? 60) * 1000);
         if (ativo.current) {
           setDestino(normalizado); setCodigo(''); setAgora(Date.now()); setEtapa('codigo');
-          setAviso(definirSenha ? 'Se esta conta puder definir uma senha, você receberá um código de verificação.' : 'Solicitação recebida. O código é enviado apenas para cadastro novo ou pendente. Se você já confirmou este e-mail, entre com sua senha. Uma solicitação aceita não confirma a entrega do e-mail.');
+          const codigoTeste = codigoDemonstrativo(response, import.meta.env.DEV);
+          setAviso(definirSenha
+            ? codigoTeste ? `Código de teste: ${codigoTeste}` : 'Se esta conta puder definir uma senha, você receberá um código de verificação.'
+            : codigoTeste ? `Modo de desenvolvimento: use o código ${codigoTeste} para concluir o cadastro.` : 'Solicitação recebida. O código é enviado apenas para cadastro novo ou pendente. Se você já confirmou este e-mail, entre com sua senha. Uma solicitação aceita não confirma a entrega do e-mail.');
         }
       }
     } catch (error) {
