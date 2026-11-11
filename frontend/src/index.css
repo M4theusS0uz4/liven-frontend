@@ -108,6 +108,17 @@
   @apply bg-brand/50;
 }
 
+@keyframes registration-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.registration-step { animation: registration-enter 180ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .registration-step { animation: none; }
+}
+
 @keyframes scan {
   0% { transform: translateY(0); opacity: 0; }
   20% { opacity: 1; }

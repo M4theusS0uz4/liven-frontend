@@ -1,4 +1,6 @@
-﻿export const API_URL = (import.meta.env.VITE_API_URL ?? '/api/v1').replace(/\/$/, '');
+import { getSession, sessionRevision, setSession, validTokens } from './session';
+import { normalizarEmail } from './otp';
+export const API_URL = (import.meta.env?.VITE_API_URL ?? '/api/v1').replace(/\/$/, '');
 const API_TIMEOUT_MS = 10000;
 
 export type TipoResidencia = 'casa' | 'apartamento';
@@ -16,61 +18,249 @@ export type TipoCondominio = 'vertical' | 'horizontal' | 'misto';
 export type BlocoMapa = { id: number; nome: string; x: number; y: number; largura: number; altura: number; andares: number };
 export type AreaComum = { id: number; nome: string; tipo: string; x: number; y: number; largura: number; altura: number };
 export type Mapa = { id: number; nome: string; tipo_condominio?: TipoCondominio; largura: number; altura: number; unidades: MapaUnidade[]; blocos: BlocoMapa[]; ruas: { id: number; nome: string; pontos: { x: number; y: number }[]; largura: number }[]; areas_comuns: AreaComum[]; portarias: { id: number; nome: string; x: number; y: number }[] };
-export type LoginInput = { telefone: string; perfil: 'morador' | 'portaria' | 'sindico'; codigo: string };
-export type LoginResponse = { access_token: string; token_type: string; usuario: { telefone: string; nome: string; perfil: LoginInput['perfil'] } };
+export type Perfil = 'morador' | 'portaria' | 'sindico';
+export type Usuario = { id: number; condominio_id: number; telefone: string; email?: string | null; nome: string; perfil: Perfil; ativo: boolean; unidade_id: number | null; created_at: string };
+export type OtpInput = { email: string; condominio_id: number };
+export type OtpVerifyInput = OtpInput & { codigo: string };
+export type OtpResponse = { detail: string; codigo_mock?: string };
+export type AuthResponse = { access_token: string; refresh_token: string; token_type: string; expires_in: number };
+export type ContaGlobal = { id: number; email: string; ativo: boolean; email_verificado_em: string; created_at: string };
+export type Vinculo = { usuario_id: number; condominio_id: number; condominio_nome: string; perfil: Perfil };
+export type GlobalAuthResponse = AuthResponse & { conta: ContaGlobal; scope?: 'global' | 'condominio'; usuario?: Usuario | null; vinculos?: Vinculo[] };
 
-export async function apiRequest(path: string, options: RequestInit = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-  const usuario = lerUsuarioLocal();
-  const accessToken = localStorage.getItem('liven-access-token');
+export function validarContexto(response: GlobalAuthResponse): boolean {
+  if (response.scope === 'condominio') return validarUsuario(response.usuario)
+    && response.usuario.email === response.conta.email;
+  return (response.scope === undefined || response.scope === 'global') && !response.usuario;
+}
 
-  try {
-    const response = await fetch(`${API_URL}${path}`, {
-      ...options,
-      signal: options.signal ?? controller.signal,
-      headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...(usuario ? { 'X-User-Profile': usuario.perfil, 'X-User-Phone': usuario.telefone } : {}), ...options.headers },
-    });
-    if (!response.ok) {
-      throw new Error(`${mensagemSegura(response.status)} (${response.status}: ${API_URL}${path})`);
-    }
-    return response.status === 204 ? undefined : response.json();
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error(`A API não respondeu em ${API_TIMEOUT_MS / 1000}s. Verifique o backend e o banco de dados.`);
-    }
-    if (error instanceof TypeError) {
-      const destino = API_URL.startsWith('/') ? 'o backend local' : API_URL;
-      throw new Error(`Não foi possível conectar à API em ${destino}. Verifique se o backend está ativo.`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
+export function validarContaGlobal(value: unknown): value is ContaGlobal {
+  if (!value || typeof value !== 'object') return false;
+  const conta = value as ContaGlobal;
+  return Number.isInteger(conta.id) && conta.id > 0 && typeof conta.email === 'string'
+    && conta.email.length > 0 && conta.ativo === true && typeof conta.email_verificado_em === 'string'
+    && Number.isFinite(Date.parse(conta.email_verificado_em));
+}
+type RequestOptions = RequestInit & { authenticated?: boolean; retryAuth?: boolean };
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public retryAfter: number | null = null) {
+    super(message);
+    this.name = 'ApiError';
   }
 }
 
-function mensagemSegura(status: number) {
-  if (status === 400 || status === 422) return 'Revise os dados informados e tente novamente.';
-  if (status === 401) return 'Sua sessão não foi reconhecida pelo backend. Entre novamente.';
-  if (status === 403) return 'Seu perfil não tem permissão para realizar esta ação.';
-  if (status === 404) return 'O recurso solicitado não foi encontrado.';
+function retryDelay(value: string | null) {
+  if (!value) return null;
+  const seconds = Number(value);
+  const delay = Number.isFinite(seconds) ? seconds : (Date.parse(value) - Date.now()) / 1000;
+  return Number.isFinite(delay) && delay > 0 ? Math.ceil(delay) : null;
+}
+
+function errorMessage(status: number, path: string, body: unknown) {
+  if (path === '/auth/login' && status === 401) return 'E-mail ou senha inválidos.';
+  if (path.startsWith('/auth/register/') || path.startsWith('/auth/password/setup/')) {
+    if (status === 401 || status === 410) return 'Código inválido ou expirado. Confira o código ou solicite outro.';
+    if (status === 503) return 'O serviço de verificação está temporariamente indisponível. Tente novamente mais tarde.';
+    if (status === 409) return 'Não foi possível concluir o cadastro. Tente entrar ou solicite um novo código.';
+  }
+  if (status === 503 && (path === '/auth/request-otp' || path === '/auth/verify-otp')) return 'O serviço de verificação está temporariamente indisponível. Tente novamente mais tarde.';
   if (status >= 500) return 'O servidor encontrou um problema. Tente novamente mais tarde.';
+  if (status === 429) return 'Muitas tentativas. Tente novamente mais tarde.';
+  if (status === 401) return path === '/auth/verify-otp'
+    ? 'Código inválido ou expirado.' : 'Sessão expirada. Faça login novamente.';
+  const detail = body && typeof body === 'object' ? (body as { detail?: unknown }).detail : null;
+  // Do not render validation inputs, tracebacks or arbitrary response objects.
+  if (typeof detail === 'string' && detail.length <= 300
+    && !/[<>\n\r]|traceback|sqlalchemy|password|secret|token[=:]/i.test(detail)) return detail;
+  if (status === 422 && Array.isArray(detail)) {
+    const messages = detail.slice(0, 3).flatMap((item: unknown) => {
+      if (!item || typeof item !== 'object') return [];
+      const { msg } = item as { msg?: unknown };
+      return typeof msg === 'string' && msg.length <= 150
+        && !/[<>\n\r]|traceback|password|secret|token[=:]/i.test(msg) ? [msg] : [];
+    });
+    if (messages.length) return `Revise os dados informados: ${messages.join('; ')}`;
+  }
+  if (status === 400 || status === 422) return 'Revise os dados informados e tente novamente.';
+  if (status === 403) return 'Seu usuário não tem permissão ou está inativo.';
+  if (status === 404) return 'O recurso solicitado não foi encontrado.';
   return `A API respondeu com erro ${status}.`;
 }
 
-function lerUsuarioLocal(): { perfil: string; telefone: string } | null {
+async function sendRequest(path: string, options: RequestInit, token: string | null, rawResponse = false) {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  options.signal?.addEventListener('abort', onAbort, { once: true });
+  if (options.signal?.aborted) controller.abort();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const headers = new Headers(options.headers);
+  if (options.body) headers.set('Content-Type', 'application/json');
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  else headers.delete('Authorization');
+  headers.delete('X-User-Profile');
+  headers.delete('X-User-Phone');
   try {
-    const valor = localStorage.getItem('liven-usuario');
-    if (!valor) return null;
-    const usuario = JSON.parse(valor) as { perfil?: string; telefone?: string };
-    return usuario.perfil && usuario.telefone ? { perfil: usuario.perfil, telefone: usuario.telefone } : null;
-  } catch {
-    return null;
+    const response = await fetch(`${API_URL}${path}`, { ...options, headers, signal: controller.signal });
+    if (!response.ok) {
+      const body: unknown = await response.json().catch(() => null);
+      throw new ApiError(errorMessage(response.status, path, body), response.status, retryDelay(response.headers.get('Retry-After')));
+    }
+    if (rawResponse) return response;
+    return response.status === 204 ? undefined : await response.json();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(options.signal?.aborted ? 'Solicitação cancelada.' : 'O servidor não respondeu a tempo. Tente novamente.');
+    }
+    if (error instanceof TypeError) throw new Error('Não foi possível conectar ao servidor.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', onAbort);
   }
 }
 
+let refreshing: { revision: number; promise: Promise<AuthResponse> } | null = null;
+
+export function renovarSessao(): Promise<AuthResponse> {
+  const session = getSession();
+  const revision = sessionRevision();
+  if (!session) return Promise.reject(new ApiError('Sessão expirada. Faça login novamente.', 401));
+  if (refreshing?.revision === revision) return refreshing.promise;
+  const promise = (async () => {
+    try {
+      const prefix = session.scope === 'global' ? '/auth/global' : '/auth';
+      const response = await sendRequest(`${prefix}/refresh`, { method: 'POST', body: JSON.stringify({ refresh_token: session.refresh_token }) }, null) as GlobalAuthResponse;
+      if (!validTokens(response) || response.token_type !== 'bearer' || (session.scope && (!validarContaGlobal(response.conta) || !validarContexto(response)))) {
+        if (sessionRevision() === revision) setSession(null);
+        throw new Error('Resposta de sessão inválida.');
+      }
+      if (sessionRevision() !== revision) {
+        await sendRequest(`${prefix}/logout`, { method: 'POST', body: JSON.stringify({ refresh_token: response.refresh_token }) }, response.access_token).catch(() => {});
+        throw new Error('A sessão foi alterada. Faça login novamente.');
+      }
+      setSession({ ...response, scope: response.scope ?? session.scope });
+      return response;
+    } catch (error) {
+      if (sessionRevision() === revision && error instanceof ApiError && (error.status === 401 || error.status === 403)) setSession(null);
+      throw error;
+    } finally {
+      if (refreshing?.revision === revision) refreshing = null;
+    }
+  })();
+  refreshing = { revision, promise };
+  return promise;
+}
+
+export async function apiRequest(path: string, options: RequestOptions = {}) {
+  const { authenticated = true, retryAuth = true, ...init } = options;
+  const session = authenticated ? getSession() : null;
+  if (session?.scope === 'global' && !path.startsWith('/auth/global/')) throw new ApiError('É necessário um vínculo autorizado com um condomínio.', 403);
+  try {
+    return await sendRequest(path, init, session?.access_token ?? null);
+  } catch (error) {
+    if (!authenticated || !(error instanceof ApiError) || error.status !== 401) throw error;
+    if (!session || !retryAuth) throw error;
+    // A concurrent request may already have rotated the tokens.
+    const latest = getSession();
+    if (!latest) throw error;
+    const token = latest.access_token !== session.access_token ? latest.access_token : (await renovarSessao()).access_token;
+    if (getSession()?.scope === 'global' && !path.startsWith('/auth/global/'))
+      throw new ApiError('É necessário um vínculo autorizado com um condomínio.', 403);
+    try {
+      return await sendRequest(path, init, token);
+    } catch (retryError) {
+      if (retryError instanceof ApiError && retryError.status === 401 && getSession()?.access_token === token) setSession(null);
+      throw retryError;
+    }
+  }
+}
+
+export const solicitarOtp = (payload: OtpInput) => apiRequest('/auth/request-otp', { method: 'POST', authenticated: false, body: JSON.stringify(payload) }) as Promise<OtpResponse>;
+export const verificarOtp = (payload: OtpVerifyInput) => apiRequest('/auth/verify-otp', { method: 'POST', authenticated: false, body: JSON.stringify(payload) }) as Promise<AuthResponse>;
+
+// Registration has no tenant or profile; AuthContext establishes the global session.
+// The backend keeps duplicate requests generic and creates accounts only on HTTP 201.
+export async function solicitarCadastroOtp(email: string, senha: string): Promise<{ retryAfter: number | null }> {
+  const response = await sendRequest('/auth/register/request-otp', {
+    method: 'POST', body: JSON.stringify({ email: normalizarEmail(email), senha }),
+  }, null, true) as Response;
+  return { retryAfter: retryDelay(response.headers.get('Retry-After')) };
+}
+
+export async function verificarCadastroOtp(email: string, codigo: string, senha: string, definirSenha = false): Promise<GlobalAuthResponse> {
+  const normalizado = normalizarEmail(email);
+  const response = await sendRequest(definirSenha ? '/auth/password/setup/verify-otp' : '/auth/register/verify-otp', {
+    method: 'POST', body: JSON.stringify({ email: normalizado, codigo, senha }),
+  }, null, true) as Response;
+  if (response.status === 202) throw new Error('A confirmação ainda está em processamento. Aguarde e tente novamente.');
+  if (response.status !== (definirSenha ? 200 : 201)) throw new Error('Não foi possível confirmar a criação da conta. Tente entrar ou solicite um novo código.');
+  const body = await response.json().catch(() => null);
+  const conta = body?.conta;
+  if (body?.token_type !== 'bearer' || !validTokens(body) || !conta
+    || !Number.isInteger(conta.id) || conta.id <= 0 || conta.email !== normalizado
+    || conta.ativo !== true || typeof conta.email_verificado_em !== 'string'
+    || !Number.isFinite(Date.parse(conta.email_verificado_em))) {
+    throw new Error('Não foi possível confirmar a criação da conta. Tente entrar ou solicite um novo código.');
+  }
+  if (!validarContexto(body as GlobalAuthResponse)) throw new Error('Contexto de autenticação inválido.');
+  return body as GlobalAuthResponse;
+}
+export async function entrarComSenha(email: string, senha: string): Promise<GlobalAuthResponse> {
+  const response = await sendRequest('/auth/login', { method: 'POST',
+    body: JSON.stringify({ email: normalizarEmail(email), senha }) }, null) as GlobalAuthResponse;
+  if (!response || response.token_type !== 'bearer' || !validTokens(response)
+    || !validarContaGlobal(response.conta) || response.conta.email !== normalizarEmail(email) || !validarContexto(response)) {
+    throw new Error('Resposta de autenticação inválida.');
+  }
+  return response;
+}
+
+export async function reenviarCadastroOtp(email: string): Promise<{ retryAfter: number | null }> {
+  const response = await sendRequest('/auth/register/resend-otp', { method: 'POST',
+    body: JSON.stringify({ email: normalizarEmail(email) }) }, null, true) as Response;
+  return { retryAfter: retryDelay(response.headers.get('Retry-After')) };
+}
+
+export async function solicitarDefinicaoSenha(email: string, senha: string): Promise<{ retryAfter: number | null }> {
+  const response = await sendRequest('/auth/password/setup/request-otp', { method: 'POST',
+    body: JSON.stringify({ email: normalizarEmail(email), senha }) }, null, true) as Response;
+  return { retryAfter: retryDelay(response.headers.get('Retry-After')) };
+}
+
+export const obterContaGlobalAtual = () => apiRequest('/auth/global/me') as Promise<ContaGlobal>;
+export const obterVinculos = () => apiRequest('/auth/global/condominios') as Promise<Vinculo[]>;
+export const selecionarCondominio = (usuario_id: number) => apiRequest('/auth/global/select-condominio', {
+  method: 'POST', retryAuth: false, body: JSON.stringify({ usuario_id }),
+}) as Promise<GlobalAuthResponse>;
+export const obterUsuarioAtual = (accessToken?: string) => (accessToken
+  ? sendRequest('/me', {}, accessToken) : apiRequest('/me')) as Promise<Usuario>;
+export async function encerrarSessao(session = getSession()): Promise<void> {
+  if (!session) return;
+  const prefix = session.scope === 'global' ? '/auth/global' : '/auth';
+  const logout = (tokens: { access_token: string; refresh_token: string }) => sendRequest(`${prefix}/logout`, {
+    method: 'POST', body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+  }, tokens.access_token);
+  try { await logout(session); }
+  catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 401) throw error;
+    // Logout must revoke the refresh token even when its access token expired.
+    // Never restore the local session while doing this cleanup.
+    const tokens = await sendRequest(`${prefix}/refresh`, { method: 'POST', body: JSON.stringify({ refresh_token: session.refresh_token }) }, null) as AuthResponse;
+    if (!validTokens(tokens) || tokens.token_type !== 'bearer') throw new Error('Resposta de sessão inválida.');
+    await logout(tokens);
+  }
+}
+
+export function validarUsuario(value: unknown): value is Usuario {
+  if (!value || typeof value !== 'object') return false;
+  const user = value as Usuario;
+  return Number.isInteger(user.id) && user.id > 0 && Number.isInteger(user.condominio_id) && user.condominio_id > 0
+    && typeof user.nome === 'string' && typeof user.telefone === 'string'
+    && ['morador', 'portaria', 'sindico'].includes(user.perfil) && user.ativo === true;
+}
+
 export const listarUnidades = () => apiRequest('/unidades') as Promise<Unidade[]>;
-export const autenticar = (payload: LoginInput) => apiRequest('/auth/login', { method: 'POST', body: JSON.stringify(payload) }) as Promise<LoginResponse>;
 export const listarMoradores = () => apiRequest('/moradores') as Promise<Morador[]>;
 export const listarEntregas = () => apiRequest('/entregas') as Promise<Entrega[]>;
 export const listarMapa = () => apiRequest('/condominio/mapa') as Promise<Mapa>;

@@ -1,3 +1,4 @@
+import { getSession as getStoredSession } from './lib/session';
 import { AlertTriangle, Bell, Building2, Car, DoorOpen, LogOut, Map, Menu, Package, Shield, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
@@ -8,6 +9,8 @@ import AnnouncementsPage from './pages/AnnouncementsPage';
 import CondominiumMapPage from './pages/CondominiumMapPage';
 import DeliveriesPage from './pages/DeliveriesPage';
 import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import WelcomePage from './pages/WelcomePage';
 import OccurrencesPage from './pages/OccurrencesPage';
 import ResidentsPage from './pages/ResidentsPage';
 import StaffPage from './pages/StaffPage';
@@ -34,27 +37,31 @@ function Dashboard() {
 }
 
 function ProtectedRoute({ children, perfis }: { children: React.ReactNode; perfis?: Perfil[] }) {
-  const { usuario } = useAuth();
-  if (!usuario) return <Navigate to="/login" replace />;
+  const { usuario, contaGlobal } = useAuth();
+  if (!usuario) return <Navigate to={contaGlobal ? "/" : "/login"} replace />;
   if (perfis && !perfis.includes(usuario.perfil)) return <Navigate to="/" replace />;
   return children;
 }
 
-function Layout() {
+export function Layout() {
   const location = useLocation();
-  const { usuario, sair } = useAuth();
+  const { usuario, contaGlobal, sair, carregando, erroSessao, revalidar } = useAuth();
   const [menuAberto, setMenuAberto] = useState(false);
-  if (!usuario) return <Routes><Route path="/login" element={<LoginPage />} /><Route path="*" element={<Navigate to="/login" replace />} /></Routes>;
+  if (carregando) return <main className="grid min-h-screen place-items-center bg-background text-slate-600" role="status">Validando sessão...</main>;
+  if (!usuario && !contaGlobal && getStoredSession()) return <main className="grid min-h-screen place-items-center bg-background p-5"><div className="glass space-y-4 rounded-xl p-6"><p role="alert">{erroSessao || 'Não foi possível validar sua sessão.'}</p><button onClick={() => void revalidar()} className="gradient-brand rounded-xl px-4 py-3 text-white">Tentar novamente</button><button onClick={() => void sair()} className="ml-3 text-brand">Voltar ao login</button></div></main>;
+  if (!usuario && !contaGlobal) return <Routes><Route path="/login" element={<LoginPage />} /><Route path="/register" element={<RegisterPage />} /><Route path="/password/setup" element={<RegisterPage key="setup" definirSenha />} /><Route path="*" element={<Navigate to="/login" replace />} /></Routes>;
 
-  const administrativo = usuario.perfil !== 'morador';
+  const administrativo = !!usuario && usuario.perfil !== 'morador';
+  const nome = usuario?.nome ?? contaGlobal?.email ?? '';
+  const perfilAtual = usuario ? perfilLabel[usuario.perfil] : 'Conta sem contexto condominial';
   const grupos: NavigationGroup[] = [
-    { label: 'Geral', items: [{ to: '/', label: 'Visão geral', icon: Building2 }, { to: '/announcements', label: 'Comunicados', icon: Bell }, { to: '/occurrences', label: 'Ocorrências', icon: AlertTriangle }] },
-    ...(usuario.perfil === 'morador' ? [{ label: 'Meu espaço', items: [{ to: '/visits', label: 'Minhas visitas', icon: Users }] }] : []),
+    { label: 'Geral', items: [{ to: '/', label: 'Visão geral', icon: Building2 }, ...(usuario ? [{ to: '/announcements', label: 'Comunicados', icon: Bell }, { to: '/occurrences', label: 'Ocorrências', icon: AlertTriangle }] : [])] },
+    ...(usuario?.perfil === 'morador' ? [{ label: 'Meu espaço', items: [{ to: '/visits', label: 'Minhas visitas', icon: Users }] }] : []),
     ...(administrativo ? [
       { label: 'Operação', items: [{ to: '/accesses', label: 'Controle de acessos', icon: DoorOpen }, { to: '/deliveries', label: 'Entregas', icon: Package }] },
       { label: 'Condomínio', items: [{ to: '/map', label: 'Mapa', icon: Map }, { to: '/units', label: 'Unidades', icon: Building2 }, { to: '/residents', label: 'Moradores', icon: Users }, { to: '/vehicles', label: 'Veículos', icon: Car }] },
     ] : []),
-    ...(usuario.perfil === 'sindico' ? [{ label: 'Equipe', items: [{ to: '/staff', label: 'Porteiros', icon: Shield }] }] : []),
+    ...(usuario?.perfil === 'sindico' ? [{ label: 'Equipe', items: [{ to: '/staff', label: 'Porteiros', icon: Shield }] }] : []),
   ];
   const fecharMenu = () => setMenuAberto(false);
 
@@ -62,14 +69,14 @@ function Layout() {
     <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-border bg-surface lg:flex">
       <Link to="/" className="flex h-[76px] shrink-0 items-center gap-3 border-b border-border px-6"><span className="grid size-9 place-items-center rounded-lg bg-brand text-white"><Building2 size={19}/></span><span className="text-xl font-bold tracking-tight text-slate-900">Liven</span></Link>
       <nav className="custom-scrollbar flex-1 overflow-y-auto px-3 py-6" aria-label="Navegação principal"><NavigationSections groups={grupos} pathname={location.pathname}/></nav>
-      <div className="border-t border-border p-3"><div className="flex items-center gap-3 rounded-lg px-2 py-2"><span className="grid size-9 shrink-0 place-items-center rounded-full bg-brand/10 text-sm font-black text-brand">{usuario.nome.slice(0, 1).toUpperCase()}</span><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-800">{usuario.nome}</strong><small className="text-xs text-slate-500">{perfilLabel[usuario.perfil]}</small></span><button title="Sair" aria-label="Sair" onClick={sair} className="rounded-lg p-2 text-slate-500 transition hover:bg-surface-hover hover:text-slate-900"><LogOut size={17}/></button></div></div>
+      <div className="border-t border-border p-3"><div className="flex items-center gap-3 rounded-lg px-2 py-2"><span className="grid size-9 shrink-0 place-items-center rounded-full bg-brand/10 text-sm font-black text-brand">{nome.slice(0, 1).toUpperCase()}</span><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-800">{nome}</strong><small className="text-xs text-slate-500">{perfilAtual}</small></span><button title="Sair" aria-label="Sair" onClick={sair} className="rounded-lg p-2 text-slate-500 transition hover:bg-surface-hover hover:text-slate-900"><LogOut size={17}/></button></div></div>
     </aside>
 
     <div className="lg:pl-64">
-      <header className="app-header sticky top-0 z-30 lg:hidden"><div className="flex h-16 items-center justify-between px-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-lg bg-brand text-white"><Building2 size={19}/></span><Link to="/" onClick={fecharMenu} className="text-lg font-bold tracking-tight text-slate-900">Liven</Link></div><div className="flex items-center gap-2"><span className="hidden text-right sm:block"><strong className="block max-w-36 truncate text-sm text-slate-800">{usuario.nome}</strong><small className="text-xs text-slate-500">{perfilLabel[usuario.perfil]}</small></span><button title={menuAberto ? 'Fechar menu' : 'Abrir menu'} aria-label={menuAberto ? 'Fechar menu' : 'Abrir menu'} aria-expanded={menuAberto} onClick={() => setMenuAberto((aberto) => !aberto)} className="grid size-10 place-items-center rounded-lg text-slate-600 transition hover:bg-surface-hover">{menuAberto ? <X size={20}/> : <Menu size={20}/>}</button></div></div>{menuAberto && <nav className="max-h-[calc(100dvh-64px)] overflow-y-auto border-t border-border bg-surface px-4 py-5 shadow-lg" aria-label="Navegação móvel"><NavigationSections groups={grupos} pathname={location.pathname} onNavigate={fecharMenu}/><button onClick={sair} className="mt-5 flex w-full items-center gap-3 rounded-lg border-t border-border px-3 py-4 text-sm font-semibold text-slate-600"><LogOut size={18}/>Sair da conta</button></nav>}</header>
+      <header className="app-header sticky top-0 z-30 lg:hidden"><div className="flex h-16 items-center justify-between px-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-lg bg-brand text-white"><Building2 size={19}/></span><Link to="/" onClick={fecharMenu} className="text-lg font-bold tracking-tight text-slate-900">Liven</Link></div><div className="flex items-center gap-2"><span className="hidden text-right sm:block"><strong className="block max-w-36 truncate text-sm text-slate-800">{nome}</strong><small className="text-xs text-slate-500">{perfilAtual}</small></span><button title={menuAberto ? 'Fechar menu' : 'Abrir menu'} aria-label={menuAberto ? 'Fechar menu' : 'Abrir menu'} aria-expanded={menuAberto} onClick={() => setMenuAberto((aberto) => !aberto)} className="grid size-10 place-items-center rounded-lg text-slate-600 transition hover:bg-surface-hover">{menuAberto ? <X size={20}/> : <Menu size={20}/>}</button></div></div>{menuAberto && <nav className="max-h-[calc(100dvh-64px)] overflow-y-auto border-t border-border bg-surface px-4 py-5 shadow-lg" aria-label="Navegação móvel"><NavigationSections groups={grupos} pathname={location.pathname} onNavigate={fecharMenu}/><button onClick={sair} className="mt-5 flex w-full items-center gap-3 rounded-lg border-t border-border px-3 py-4 text-sm font-semibold text-slate-600"><LogOut size={18}/>Sair da conta</button></nav>}</header>
 
     <main className="mx-auto min-h-[calc(100vh-64px)] max-w-[1600px] p-4 sm:p-6 lg:min-h-screen xl:p-8"><Routes>
-      <Route path="/" element={usuario.perfil === 'sindico' ? <SyndicDashboardPage/> : <Dashboard/>}/>
+      <Route path="/" element={usuario ? usuario.perfil === 'sindico' ? <SyndicDashboardPage/> : <Dashboard/> : <WelcomePage/>}/>
       <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage/></ProtectedRoute>}/>
       <Route path="/occurrences" element={<ProtectedRoute><OccurrencesPage/></ProtectedRoute>}/>
       <Route path="/visits" element={<ProtectedRoute perfis={['morador']}><VisitsPage/></ProtectedRoute>}/>
