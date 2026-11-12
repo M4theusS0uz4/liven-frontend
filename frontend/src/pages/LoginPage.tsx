@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PasswordInput from '../components/PasswordInput';
 import { useAuth } from '../context/AuthContext';
@@ -14,10 +14,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const ocupado = useRef(false);
   const tentarEm = useRef(0);
+  const lifetime = useRef(new AbortController());
+  useEffect(() => {
+    if (lifetime.current.signal.aborted) lifetime.current = new AbortController();
+    return () => lifetime.current.abort();
+  }, []);
   const entrar = async (event: FormEvent) => {
     event.preventDefault();
     if (ocupado.current) return;
     if (Date.now() < tentarEm.current) { setErro('Muitas tentativas. Aguarde antes de tentar novamente.'); return; }
+    const signal = lifetime.current.signal;
     setErro('');
     let normalizado: string;
     try {
@@ -26,12 +32,14 @@ export default function LoginPage() {
     } catch (error) { setErro((error as Error).message); return; }
     ocupado.current = true; setLoading(true);
     try {
-      await autenticarSenha(normalizado, senha);
+      await autenticarSenha(normalizado, senha, signal);
+      if (signal.aborted) return;
       setSenha(''); navigate('/', { replace: true });
     } catch (error) {
+      if (signal.aborted) return;
       if (error instanceof ApiError && error.status === 429) tentarEm.current = Date.now() + (error.retryAfter ?? 60) * 1000;
       setErro((error as Error).message);
-    } finally { ocupado.current = false; setLoading(false); }
+    } finally { ocupado.current = false; if (!signal.aborted) setLoading(false); }
   };
   return <main className="flex min-h-screen items-center justify-center bg-background px-5 py-10"><section className="w-full max-w-md">
     <header className="mb-8"><h1 className="text-4xl font-black tracking-tight text-slate-900">Entrar no Liven</h1><p className="mt-2 text-slate-500">Entre com seu e-mail e senha.</p></header>

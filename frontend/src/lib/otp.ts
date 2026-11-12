@@ -25,9 +25,10 @@ export function codigoDemonstrativo(response: { codigo_mock?: string }, developm
 
 // UI cooldown only. The backend remains responsible for enforcing rate limits.
 // Keep the deadline on email changes and route remounts; never store OTPs here.
-let resendAt = 0;
-export function proximoReenvio() { return resendAt; }
-export function adiarReenvio(seconds: number) {
-  resendAt = Math.max(resendAt, Date.now() + seconds * 1000);
-  return resendAt;
+const deadlines = new Map<string, number>();
+export function proximoReenvio(key = 'envio') { return deadlines.get(key) ?? 0; }
+export function adiarReenvio(seconds: number, key = 'envio') {
+  const deadline = Math.max(proximoReenvio(key), Date.now() + seconds * 1000);
+  deadlines.set(key, deadline);
+  return deadline;
 }

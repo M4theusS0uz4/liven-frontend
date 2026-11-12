@@ -28,6 +28,19 @@ export type ContaGlobal = { id: number; email: string; ativo: boolean; email_ver
 export type Vinculo = { usuario_id: number; condominio_id: number; condominio_nome: string; perfil: Perfil };
 export type GlobalAuthResponse = AuthResponse & { conta: ContaGlobal; scope?: 'global' | 'condominio'; usuario?: Usuario | null; vinculos?: Vinculo[] };
 
+export function validarVinculos(value: unknown): value is Vinculo[] {
+  return Array.isArray(value) && value.every((item) => item && Number.isInteger(item.usuario_id)
+    && item.usuario_id > 0 && Number.isInteger(item.condominio_id) && item.condominio_id > 0
+    && typeof item.condominio_nome === 'string' && ['morador', 'portaria', 'sindico'].includes(item.perfil));
+}
+
+export function validarAutenticacao(value: unknown): value is GlobalAuthResponse {
+  if (!value || typeof value !== 'object') return false;
+  const response = value as GlobalAuthResponse;
+  return validTokens(response) && response.token_type === 'bearer' && validarContaGlobal(response.conta)
+    && validarContexto(response) && (response.vinculos === undefined || validarVinculos(response.vinculos));
+}
+
 export function validarContexto(response: GlobalAuthResponse): boolean {
   if (response.scope === 'condominio') return validarUsuario(response.usuario)
     && response.usuario.email === response.conta.email;
@@ -60,7 +73,8 @@ function retryDelay(value: string | null) {
 function errorMessage(status: number, path: string, body: unknown) {
   if (path === '/auth/login' && status === 401) return 'E-mail ou senha inválidos.';
   if (path.startsWith('/auth/register/') || path.startsWith('/auth/password/setup/')) {
-    if (status === 401 || status === 410) return 'Código inválido ou expirado. Confira o código ou solicite outro.';
+    if ((status === 401 || status === 410) && path.endsWith('/verify-otp')) return 'Código inválido ou expirado. Confira o código ou solicite outro.';
+    if (status === 401 || status === 410) return 'Não foi possível solicitar a verificação. Tente novamente mais tarde.';
     if (status === 503) return 'O serviço de verificação está temporariamente indisponível. Tente novamente mais tarde.';
     if (status === 409) return 'Não foi possível concluir o cadastro. Tente entrar ou solicite um novo código.';
   }
@@ -181,12 +195,13 @@ export const verificarOtp = (payload: OtpVerifyInput) => apiRequest('/auth/verif
 
 // Registration has no tenant or profile; AuthContext establishes the global session.
 // The backend keeps duplicate requests generic and creates accounts only on HTTP 201.
-export async function solicitarCadastroOtp(email: string, senha: string): Promise<{ retryAfter: number | null; codigo_mock?: string }> {
+export async function solicitarCadastroOtp(email: string, senha: string, signal?: AbortSignal): Promise<{ retryAfter: number | null; codigo_mock?: string }> {
   const response = await sendRequest('/auth/register/request-otp', {
-    method: 'POST', body: JSON.stringify({ email: normalizarEmail(email), senha }),
+    method: 'POST', signal, body: JSON.stringify({ email: normalizarEmail(email), senha }),
   }, null, true) as Response;
   const body = await response.json().catch(() => null) as OtpResponse | null;
-  return { retryAfter: retryDelay(response.headers.get('Retry-After')), codigo_mock: body?.codigo_mock };
+  return { retryAfter: retryDelay(response.headers.get('Retry-After')),
+    ...(typeof body?.codigo_mock === 'string' ? { codigo_mock: body.codigo_mock } : {}) };
 }
 
 export async function verificarCadastroOtp(email: string, codigo: string, senha: string, definirSenha = false): Promise<GlobalAuthResponse> {
@@ -204,35 +219,41 @@ export async function verificarCadastroOtp(email: string, codigo: string, senha:
     || !Number.isFinite(Date.parse(conta.email_verificado_em))) {
     throw new Error('Não foi possível confirmar a criação da conta. Tente entrar ou solicite um novo código.');
   }
-  if (!validarContexto(body as GlobalAuthResponse)) throw new Error('Contexto de autenticação inválido.');
+  if (!validarAutenticacao(body)) throw new Error('Contexto de autenticação inválido.');
   return body as GlobalAuthResponse;
 }
 export async function entrarComSenha(email: string, senha: string): Promise<GlobalAuthResponse> {
   const response = await sendRequest('/auth/login', { method: 'POST',
     body: JSON.stringify({ email: normalizarEmail(email), senha }) }, null) as GlobalAuthResponse;
   if (!response || response.token_type !== 'bearer' || !validTokens(response)
-    || !validarContaGlobal(response.conta) || response.conta.email !== normalizarEmail(email) || !validarContexto(response)) {
+    || !validarAutenticacao(response) || response.conta.email !== normalizarEmail(email)) {
     throw new Error('Resposta de autenticação inválida.');
   }
   return response;
 }
 
-export async function reenviarCadastroOtp(email: string): Promise<{ retryAfter: number | null; codigo_mock?: string }> {
-  const response = await sendRequest('/auth/register/resend-otp', { method: 'POST',
+export async function reenviarCadastroOtp(email: string, signal?: AbortSignal): Promise<{ retryAfter: number | null; codigo_mock?: string }> {
+  const response = await sendRequest('/auth/register/resend-otp', { method: 'POST', signal,
     body: JSON.stringify({ email: normalizarEmail(email) }) }, null, true) as Response;
   const body = await response.json().catch(() => null) as OtpResponse | null;
-  return { retryAfter: retryDelay(response.headers.get('Retry-After')), codigo_mock: body?.codigo_mock };
+  return { retryAfter: retryDelay(response.headers.get('Retry-After')),
+    ...(typeof body?.codigo_mock === 'string' ? { codigo_mock: body.codigo_mock } : {}) };
 }
 
-export async function solicitarDefinicaoSenha(email: string, senha: string): Promise<{ retryAfter: number | null; codigo_mock?: string }> {
-  const response = await sendRequest('/auth/password/setup/request-otp', { method: 'POST',
+export async function solicitarDefinicaoSenha(email: string, senha: string, signal?: AbortSignal): Promise<{ retryAfter: number | null; codigo_mock?: string }> {
+  const response = await sendRequest('/auth/password/setup/request-otp', { method: 'POST', signal,
     body: JSON.stringify({ email: normalizarEmail(email), senha }) }, null, true) as Response;
   const body = await response.json().catch(() => null) as OtpResponse | null;
-  return { retryAfter: retryDelay(response.headers.get('Retry-After')), codigo_mock: body?.codigo_mock };
+  return { retryAfter: retryDelay(response.headers.get('Retry-After')),
+    ...(typeof body?.codigo_mock === 'string' ? { codigo_mock: body.codigo_mock } : {}) };
 }
 
 export const obterContaGlobalAtual = () => apiRequest('/auth/global/me') as Promise<ContaGlobal>;
-export const obterVinculos = () => apiRequest('/auth/global/condominios') as Promise<Vinculo[]>;
+export const obterVinculos = async (): Promise<Vinculo[]> => {
+  const response = await apiRequest('/auth/global/condominios');
+  if (!validarVinculos(response)) throw new Error('Resposta de vínculos inválida. Tente novamente.');
+  return response;
+};
 export const selecionarCondominio = (usuario_id: number) => apiRequest('/auth/global/select-condominio', {
   method: 'POST', retryAuth: false, body: JSON.stringify({ usuario_id }),
 }) as Promise<GlobalAuthResponse>;

@@ -5,10 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import PasswordInput from '../components/PasswordInput';
 import OtpCodeInput from '../components/OtpCodeInput';
 import { ApiError, solicitarCadastroOtp, reenviarCadastroOtp, solicitarDefinicaoSenha } from '../lib/api';
-import { codigoDemonstrativo, mascararEmail, normalizarEmail } from '../lib/otp';
-
-// UI fallback only; the backend remains responsible for enforcing its limits.
-let resendAt = 0;
+import { adiarReenvio, proximoReenvio, codigoDemonstrativo, mascararEmail, normalizarEmail } from '../lib/otp';
 
 export default function RegisterPage({ definirSenha = false }: { definirSenha?: boolean }) {
   const { autenticarCadastro } = useAuth();
@@ -23,19 +20,24 @@ export default function RegisterPage({ definirSenha = false }: { definirSenha?: 
   const [aviso, setAviso] = useState('');
   const [loading, setLoading] = useState(false);
   const [agora, setAgora] = useState(Date.now);
-  const [verificarEm, setVerificarEm] = useState(0);
+  const verificarKey = `${definirSenha ? 'setup' : 'cadastro'}:${destino}:verificar`;
+  const verificarEm = proximoReenvio(verificarKey);
+  const resendAt = proximoReenvio();
+  const lifetime = useRef(new AbortController());
   const ocupado = useRef(false);
   const ativo = useRef(true);
   const segundos = Math.max(0, Math.ceil((resendAt - agora) / 1000));
 
   useEffect(() => {
     ativo.current = true;
+    if (lifetime.current.signal.aborted) lifetime.current = new AbortController();
     const timer = setInterval(() => setAgora(Date.now()), 1000);
-    return () => { ativo.current = false; clearInterval(timer); };
+    return () => { ativo.current = false; lifetime.current.abort(); clearInterval(timer); };
   }, []);
 
   const executar = async (verificar: boolean) => {
     if (ocupado.current || (verificar ? Date.now() < verificarEm : Date.now() < resendAt)) return;
+    const signal = lifetime.current.signal;
     setErro(''); setAviso('');
     let normalizado: string;
     try {
@@ -47,13 +49,15 @@ export default function RegisterPage({ definirSenha = false }: { definirSenha?: 
     ocupado.current = true; setLoading(true);
     try {
       if (verificar) {
-        await autenticarCadastro(normalizado, codigo, senha, definirSenha);
+        await autenticarCadastro(normalizado, codigo, senha, definirSenha, signal);
+        if (signal.aborted) return;
         setSenha(''); setConfirmacao('');
         navigate('/', { replace: true });
       } else {
-        const response = definirSenha ? await solicitarDefinicaoSenha(normalizado, senha)
-          : etapa === 'codigo' ? await reenviarCadastroOtp(normalizado) : await solicitarCadastroOtp(normalizado, senha);
-        resendAt = Math.max(resendAt, Date.now() + (response.retryAfter ?? 60) * 1000);
+        const response = definirSenha ? await solicitarDefinicaoSenha(normalizado, senha, signal)
+          : etapa === 'codigo' ? await reenviarCadastroOtp(normalizado, signal) : await solicitarCadastroOtp(normalizado, senha, signal);
+        if (signal.aborted) return;
+        adiarReenvio(response.retryAfter ?? 60);
         if (ativo.current) {
           setDestino(normalizado); setCodigo(''); setAgora(Date.now()); setEtapa('codigo');
           const codigoTeste = codigoDemonstrativo(response, import.meta.env.DEV);
@@ -63,14 +67,13 @@ export default function RegisterPage({ definirSenha = false }: { definirSenha?: 
         }
       }
     } catch (error) {
-      if (!ativo.current) return;
+      if (signal.aborted || !ativo.current) return;
       if (error instanceof ApiError && error.status === 429) {
-        const deadline = Date.now() + (error.retryAfter ?? 60) * 1000;
-        resendAt = Math.max(resendAt, deadline);
-        setVerificarEm(deadline); setAgora(Date.now());
+        adiarReenvio(error.retryAfter ?? 60, verificar ? verificarKey : 'envio');
+        setAgora(Date.now());
       }
       setErro((error as Error).message);
-    } finally { ocupado.current = false; if (ativo.current) setLoading(false); }
+    } finally { ocupado.current = false; if (!signal.aborted && ativo.current) setLoading(false); }
   };
   const enviar = (event: FormEvent) => { event.preventDefault(); void executar(etapa === 'codigo'); };
   const button = 'gradient-brand w-full rounded-xl px-4 py-3 font-black text-white transition-opacity disabled:opacity-50';

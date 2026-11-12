@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError, encerrarSessao, obterUsuarioAtual, renovarSessao, validarUsuario, verificarOtp, type OtpVerifyInput, type Usuario } from '../lib/api';
 import { getSession, sessionRevision, setSession, subscribeSession, validTokens } from '../lib/session';
-import { entrarComSenha, obterContaGlobalAtual, obterVinculos, selecionarCondominio, validarContaGlobal, validarContexto, verificarCadastroOtp, type ContaGlobal, type GlobalAuthResponse, type Vinculo } from '../lib/api';
+import { entrarComSenha, obterContaGlobalAtual, obterVinculos, selecionarCondominio, validarContaGlobal, validarAutenticacao, verificarCadastroOtp, type ContaGlobal, type GlobalAuthResponse, type Vinculo } from '../lib/api';
 
 export type { Perfil, Usuario } from '../lib/api';
 
@@ -15,8 +15,8 @@ type AuthContextValue = {
   erroSessao: string;
   revalidar: () => Promise<void>;
   autenticar: (payload: OtpVerifyInput) => Promise<void>;
-  autenticarSenha: (email: string, senha: string) => Promise<void>;
-  autenticarCadastro: (email: string, codigo: string, senha: string, definirSenha?: boolean) => Promise<void>;
+  autenticarSenha: (email: string, senha: string, signal?: AbortSignal) => Promise<void>;
+  autenticarCadastro: (email: string, codigo: string, senha: string, definirSenha?: boolean, signal?: AbortSignal) => Promise<void>;
   sair: () => Promise<void>;
 };
 
@@ -57,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (saved.expires_at <= Date.now()) await renovarSessao();
       if (getSession()?.scope === 'global') {
         const conta = await obterContaGlobalAtual();
+        if (!mounted.current || epoch.current !== attempt || !getSession()) return;
         if (!validarContaGlobal(conta)) {
           setSession(null);
           throw new Error('Conta inválida ou inativa. Faça login novamente.');
@@ -68,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       const user = await obterUsuarioAtual();
+      if (!mounted.current || epoch.current !== attempt || !getSession()) return;
       if (!validarUsuario(user)) {
         setSession(null);
         throw new Error('Usuário inválido ou inativo. Faça login novamente.');
@@ -129,35 +131,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { canceled = true; clearTimeout(timer); };
   }, [session, usuario, contaGlobal]);
 
-  const autenticarGlobal = useCallback(async (solicitar: () => Promise<GlobalAuthResponse>) => {
+  const autenticarGlobal = useCallback(async (solicitar: () => Promise<GlobalAuthResponse>, signal?: AbortSignal) => {
     if (operation.current) throw new Error('Aguarde a solicitação atual.');
     operation.current = true;
     const revision = sessionRevision();
     try {
+      if (signal?.aborted) throw new Error('Solicitação cancelada.');
       const response = await solicitar();
       try {
-        if (!validarContexto(response)) throw new Error('Contexto de autenticação inválido.');
+        if (!validarAutenticacao(response)) throw new Error('Resposta de autenticação inválida.');
         const user = response.scope === 'condominio' ? await obterUsuarioAtual(response.access_token) : null;
         if (user && (!validarUsuario(user) || user.id !== response.usuario?.id || user.condominio_id !== response.usuario.condominio_id || user.perfil !== response.usuario.perfil))
           throw new Error('Vínculo inválido ou revogado.');
-        if (!mounted.current || revision !== sessionRevision()) throw new Error('A sessão foi alterada. Faça login novamente.');
+        if (signal?.aborted || !mounted.current || revision !== sessionRevision()) throw new Error('A sessão foi alterada. Faça login novamente.');
         setSession({ ...response, scope: response.scope ?? 'global' });
         setUsuario(user);
         setContaGlobal(user ? null : response.conta);
         setVinculos(response.vinculos ?? []);
         setErroSessao('');
       } catch (error) {
-        await encerrarSessao({ ...response, scope: response.scope ?? 'global', expires_at: Date.now() + response.expires_in * 1000 }).catch(() => {});
+        if (validTokens(response)) await encerrarSessao({ ...response, scope: response.scope ?? 'global', expires_at: Date.now() + response.expires_in * 1000 }).catch(() => {});
         if (revision === sessionRevision()) setSession(null);
         throw error;
       }
     } finally { operation.current = false; }
   }, []);
 
-  const autenticarCadastro = useCallback((email: string, codigo: string, senha: string, definirSenha = false) =>
-    autenticarGlobal(() => verificarCadastroOtp(email, codigo, senha, definirSenha)), [autenticarGlobal]);
-  const autenticarSenha = useCallback((email: string, senha: string) =>
-    autenticarGlobal(() => entrarComSenha(email, senha)), [autenticarGlobal]);
+  const autenticarCadastro = useCallback((email: string, codigo: string, senha: string, definirSenha = false, signal?: AbortSignal) =>
+    autenticarGlobal(() => verificarCadastroOtp(email, codigo, senha, definirSenha), signal), [autenticarGlobal]);
+  const autenticarSenha = useCallback((email: string, senha: string, signal?: AbortSignal) =>
+    autenticarGlobal(() => entrarComSenha(email, senha), signal), [autenticarGlobal]);
   const escolherCondominio = useCallback((usuarioId: number) =>
     autenticarGlobal(() => selecionarCondominio(usuarioId)), [autenticarGlobal]);
 
@@ -193,8 +196,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setVinculos([]);
     setCarregando(false);
     setErroSessao('');
+    const revision = sessionRevision();
     try { await encerrarSessao(saved); }
-    catch { setErroSessao('Sessão removida deste navegador. Não foi possível confirmar a revogação no servidor.'); }
+    catch { if (mounted.current && revision === sessionRevision()) setErroSessao('Sessão removida deste navegador. Não foi possível confirmar a revogação no servidor.'); }
   }, []);
 
   const valor = useMemo(() => ({ usuario, contaGlobal, vinculos, escolherCondominio, accessToken: session?.access_token ?? null, carregando, erroSessao, revalidar, autenticar, autenticarCadastro, autenticarSenha, sair }), [usuario, contaGlobal, vinculos, escolherCondominio, session, carregando, erroSessao, revalidar, autenticar, autenticarCadastro, autenticarSenha, sair]);
