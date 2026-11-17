@@ -17,6 +17,8 @@ type AuthContextValue = {
   autenticar: (payload: OtpVerifyInput) => Promise<void>;
   autenticarSenha: (email: string, senha: string, signal?: AbortSignal) => Promise<void>;
   autenticarCadastro: (email: string, codigo: string, senha: string, definirSenha?: boolean, signal?: AbortSignal) => Promise<void>;
+  entrarModoDemonstracao: () => void;
+  modoDemonstracao: boolean;
   sair: () => Promise<void>;
 };
 
@@ -29,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, updateSession] = useState(getSession);
   const [carregando, setCarregando] = useState(true);
   const [erroSessao, setErroSessao] = useState('');
+  const [modoDemonstracao, setModoDemonstracao] = useState(false);
   const operation = useRef(false);
   const mounted = useRef(true);
   const epoch = useRef(0);
@@ -161,6 +164,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     autenticarGlobal(() => verificarCadastroOtp(email, codigo, senha, definirSenha), signal), [autenticarGlobal]);
   const autenticarSenha = useCallback((email: string, senha: string, signal?: AbortSignal) =>
     autenticarGlobal(() => entrarComSenha(email, senha), signal), [autenticarGlobal]);
+  const entrarModoDemonstracao = useCallback(() => {
+    const hostLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    if (!import.meta.env.DEV || !hostLocal) return;
+    setUsuario({ id: 1, condominio_id: 1, telefone: '', email: 'demo@liven.local', nome: 'Síndico de demonstração', perfil: 'sindico', ativo: true, unidade_id: null, created_at: new Date().toISOString() });
+    setContaGlobal(null);
+    setVinculos([]);
+    setErroSessao('');
+    setModoDemonstracao(true);
+    setCarregando(false);
+  }, []);
   const escolherCondominio = useCallback((usuarioId: number) =>
     autenticarGlobal(() => selecionarCondominio(usuarioId)), [autenticarGlobal]);
 
@@ -189,6 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const sair = useCallback(async () => {
     epoch.current += 1;
+    setModoDemonstracao(false);
     const saved = getSession();
     setSession(null);
     setUsuario(null);
@@ -201,7 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     catch { if (mounted.current && revision === sessionRevision()) setErroSessao('Sessão removida deste navegador. Não foi possível confirmar a revogação no servidor.'); }
   }, []);
 
-  const valor = useMemo(() => ({ usuario, contaGlobal, vinculos, escolherCondominio, accessToken: session?.access_token ?? null, carregando, erroSessao, revalidar, autenticar, autenticarCadastro, autenticarSenha, sair }), [usuario, contaGlobal, vinculos, escolherCondominio, session, carregando, erroSessao, revalidar, autenticar, autenticarCadastro, autenticarSenha, sair]);
+  const valor = useMemo(() => ({ usuario, contaGlobal, vinculos, escolherCondominio, accessToken: session?.access_token ?? null, carregando, erroSessao, revalidar, autenticar, autenticarCadastro, autenticarSenha, entrarModoDemonstracao, modoDemonstracao, sair }), [usuario, contaGlobal, vinculos, escolherCondominio, session, carregando, erroSessao, revalidar, autenticar, autenticarCadastro, autenticarSenha, entrarModoDemonstracao, modoDemonstracao, sair]);
   return <AuthContext.Provider value={valor}>{children}</AuthContext.Provider>;
 }
 

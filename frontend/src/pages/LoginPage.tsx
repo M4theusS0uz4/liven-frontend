@@ -6,13 +6,14 @@ import { ApiError } from '../lib/api';
 import { normalizarEmail } from '../lib/otp';
 
 export default function LoginPage() {
-  const { autenticarSenha, erroSessao } = useAuth();
+  const { autenticarSenha, erroSessao, entrarModoDemonstracao } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
   const [loading, setLoading] = useState(false);
   const ocupado = useRef(false);
+  const podeDemonstrar = import.meta.env.DEV && ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const tentarEm = useRef(0);
   const lifetime = useRef(new AbortController());
   useEffect(() => {
@@ -49,6 +50,7 @@ export default function LoginPage() {
         <PasswordInput label="Senha" value={senha} onChange={setSenha} disabled={loading} autoComplete="current-password" minLength={1}/>
         <button disabled={loading} className="gradient-brand w-full rounded-xl px-4 py-3 font-black text-white disabled:opacity-50">{loading ? 'Entrando...' : 'Entrar'}</button>
       </form>
+      {podeDemonstrar && <div className="mt-4 border-t border-border pt-4"><button type="button" onClick={() => { entrarModoDemonstracao(); navigate('/', { replace: true }); }} className="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 hover:bg-amber-100">Acessar modo demonstração</button><p className="mt-2 text-center text-xs text-slate-500">Acesso temporário para visualizar as telas. Os dados não serão salvos.</p></div>}
       {(erro || erroSessao) && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{erro || erroSessao}</p>}
       <Link to="/password/setup" className="mt-5 block text-center text-sm font-bold text-brand hover:underline">Já tinha uma conta sem senha? Definir senha</Link>
     </div>

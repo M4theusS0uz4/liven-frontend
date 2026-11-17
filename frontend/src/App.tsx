@@ -45,7 +45,7 @@ function ProtectedRoute({ children, perfis }: { children: React.ReactNode; perfi
 
 export function Layout() {
   const location = useLocation();
-  const { usuario, contaGlobal, sair, carregando, erroSessao, revalidar } = useAuth();
+  const { usuario, contaGlobal, sair, carregando, erroSessao, revalidar, modoDemonstracao } = useAuth();
   const [menuAberto, setMenuAberto] = useState(false);
   if (carregando) return <main className="grid min-h-screen place-items-center bg-background text-slate-600" role="status">Validando sessão...</main>;
   if (!usuario && !contaGlobal && getStoredSession()) return <main className="grid min-h-screen place-items-center bg-background p-5"><div className="glass space-y-4 rounded-xl p-6"><p role="alert">{erroSessao || 'Não foi possível validar sua sessão.'}</p><button onClick={() => void revalidar()} className="gradient-brand rounded-xl px-4 py-3 text-white">Tentar novamente</button><button onClick={() => void sair()} className="ml-3 text-brand">Voltar ao login</button></div></main>;
@@ -75,7 +75,7 @@ export function Layout() {
     <div className="lg:pl-64">
       <header className="app-header sticky top-0 z-30 lg:hidden"><div className="flex h-16 items-center justify-between px-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-lg bg-brand text-white"><Building2 size={19}/></span><Link to="/" onClick={fecharMenu} className="text-lg font-bold tracking-tight text-slate-900">Liven</Link></div><div className="flex items-center gap-2"><span className="hidden text-right sm:block"><strong className="block max-w-36 truncate text-sm text-slate-800">{nome}</strong><small className="text-xs text-slate-500">{perfilAtual}</small></span><button title={menuAberto ? 'Fechar menu' : 'Abrir menu'} aria-label={menuAberto ? 'Fechar menu' : 'Abrir menu'} aria-expanded={menuAberto} onClick={() => setMenuAberto((aberto) => !aberto)} className="grid size-10 place-items-center rounded-lg text-slate-600 transition hover:bg-surface-hover">{menuAberto ? <X size={20}/> : <Menu size={20}/>}</button></div></div>{menuAberto && <nav className="max-h-[calc(100dvh-64px)] overflow-y-auto border-t border-border bg-surface px-4 py-5 shadow-lg" aria-label="Navegação móvel"><NavigationSections groups={grupos} pathname={location.pathname} onNavigate={fecharMenu}/><button onClick={sair} className="mt-5 flex w-full items-center gap-3 rounded-lg border-t border-border px-3 py-4 text-sm font-semibold text-slate-600"><LogOut size={18}/>Sair da conta</button></nav>}</header>
 
-    <main className="mx-auto min-h-[calc(100vh-64px)] max-w-[1600px] p-4 sm:p-6 lg:min-h-screen xl:p-8"><Routes>
+    <main className="mx-auto min-h-[calc(100vh-64px)] max-w-[1600px] p-4 sm:p-6 lg:min-h-screen xl:p-8">{modoDemonstracao && <p role="status" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Modo demonstração ativo. O acesso é local e as alterações não são autenticadas nem salvas no backend.</p>}<Routes>
       <Route path="/" element={usuario ? usuario.perfil === 'sindico' ? <SyndicDashboardPage/> : <Dashboard/> : <WelcomePage/>}/>
       <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage/></ProtectedRoute>}/>
       <Route path="/occurrences" element={<ProtectedRoute><OccurrencesPage/></ProtectedRoute>}/>
