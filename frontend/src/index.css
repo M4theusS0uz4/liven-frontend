@@ -200,3 +200,10 @@
 .operations-hero :focus-visible {
   outline-color: #7dd3fc;
 }
+
+.login-showcase {
+  background-color: #10263d;
+  background-image:
+    radial-gradient(ellipse at 10% 90%, rgb(34 130 155 / 48%), transparent 68%),
+    repeating-linear-gradient(120deg, transparent 0 48px, rgb(186 230 253 / 9%) 49px 50px);
+}

@@ -2,6 +2,12 @@ import { getSession, sessionRevision, setSession, validTokens } from './session'
 import { normalizarEmail } from './otp';
 export const API_URL = (import.meta.env?.VITE_API_URL ?? '/api/v1').replace(/\/$/, '');
 const API_TIMEOUT_MS = 10000;
+const colecoesDemonstracao = new Set(['/unidades', '/moradores', '/entregas', '/veiculos']);
+let demonstracaoLocal = false;
+
+export function definirDemonstracaoLocal(ativa: boolean) {
+  demonstracaoLocal = ativa;
+}
 
 export type TipoResidencia = 'casa' | 'apartamento';
 export type Unidade = { bloco: string; numero: string; andar: number | null; tipo_residencia?: TipoResidencia; ativa: boolean; id: number; created_at: string };
@@ -168,6 +174,29 @@ export function renovarSessao(): Promise<AuthResponse> {
 
 export async function apiRequest(path: string, options: RequestOptions = {}) {
   const { authenticated = true, retryAuth = true, ...init } = options;
+  if (demonstracaoLocal && authenticated) {
+    if (!init.method || init.method === 'GET') {
+      if (colecoesDemonstracao.has(path)) return [];
+      if (path === '/condominio/mapa') {
+        return {
+          id: 0,
+          nome: 'Condomínio de demonstração',
+          tipo_condominio: 'vertical',
+          largura: 120,
+          altura: 90,
+          unidades: [],
+          blocos: [
+            { id: 1, nome: 'Torre Ipê', x: 30, y: 34, largura: 20, altura: 18, andares: 6 },
+            { id: 2, nome: 'Torre Araucária', x: 84, y: 34, largura: 20, altura: 18, andares: 8 },
+          ],
+          ruas: [{ id: 1, nome: 'Via interna', largura: 6, pontos: [{ x: 12, y: 66 }, { x: 108, y: 66 }] }],
+          areas_comuns: [],
+          portarias: [{ id: 1, nome: 'Portaria', x: 12, y: 58 }],
+        } satisfies Mapa;
+      }
+    }
+    throw new ApiError('Esta ação requer uma conta autenticada. Saia do modo demonstração para continuar.', 403);
+  }
   const session = authenticated ? getSession() : null;
   if (session?.scope === 'global' && !path.startsWith('/auth/global/')) throw new ApiError('É necessário um vínculo autorizado com um condomínio.', 403);
   try {

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ApiError, encerrarSessao, obterUsuarioAtual, renovarSessao, validarUsuario, verificarOtp, type OtpVerifyInput, type Usuario } from '../lib/api';
+import { ApiError, definirDemonstracaoLocal, encerrarSessao, obterUsuarioAtual, renovarSessao, validarUsuario, verificarOtp, type OtpVerifyInput, type Usuario } from '../lib/api';
 import { getSession, sessionRevision, setSession, subscribeSession, validTokens } from '../lib/session';
 import { entrarComSenha, obterContaGlobalAtual, obterVinculos, selecionarCondominio, validarContaGlobal, validarAutenticacao, verificarCadastroOtp, type ContaGlobal, type GlobalAuthResponse, type Vinculo } from '../lib/api';
 
@@ -171,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setContaGlobal(null);
     setVinculos([]);
     setErroSessao('');
+    definirDemonstracaoLocal(true);
     setModoDemonstracao(true);
     setCarregando(false);
   }, []);
@@ -202,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const sair = useCallback(async () => {
     epoch.current += 1;
+    definirDemonstracaoLocal(false);
     setModoDemonstracao(false);
     const saved = getSession();
     setSession(null);

@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, Building2, CalendarDays, DoorOpen, Package, RefreshCw, Shield, Users } from 'lucide-react';
+import { AlertCircle, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, Building2, CalendarDays, DoorOpen, Map, Package, RefreshCw, Shield, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -90,9 +90,14 @@ export default function SyndicDashboardPage() {
           <p className="mt-3 max-w-md text-sm leading-relaxed text-slate-200 sm:text-base">
             Acompanhe a operação do condomínio e veja o que precisa da sua atenção.
           </p>
-          <Link to="/accesses" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-sky-100">
-            Controle de acessos <ArrowUpRight size={16} aria-hidden="true" />
-          </Link>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Link to="/map" className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-sky-100">
+              <Map size={16} aria-hidden="true" /> Explorar mapa 3D
+            </Link>
+            <Link to="/accesses" className="inline-flex items-center gap-2 rounded-xl border border-white/40 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-white/10">
+              Controle de acessos <ArrowUpRight size={16} aria-hidden="true" />
+            </Link>
+          </div>
         </div>
         <div className="relative flex items-center gap-4 rounded-2xl border border-white/20 bg-white/10 px-4 py-3 sm:gap-5 sm:px-6">
           <div

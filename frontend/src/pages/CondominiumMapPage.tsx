@@ -1,3 +1,4 @@
+import { useAuth } from '../context/AuthContext';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Building2, Trash2, X, LocateFixed, MousePointer2, MapPinned, Rotate3D, Search, ExternalLink, Crosshair, Home, Route, DoorOpen, Blocks, Move, Scaling, Check, Ruler, Grid3X3, Pencil } from 'lucide-react';
 import CondominiumMap, { type AlvoMapa, type EixoMapa, type FerramentaMapa, type UnidadeMapa } from '../components/condominium/CondominiumMap';
@@ -60,6 +61,7 @@ function mapaVazio(): Mapa {
 }
 
 export default function CondominiumMapPage() {
+  const { modoDemonstracao } = useAuth();
   const [unidades, setUnidades] = useState<UnidadeMapa[]>([]);
   const [mapa, setMapa] = useState<Mapa>(mapaVazio);
   const [selecionada, setSelecionada] = useState<UnidadeMapa | null>(null);
@@ -111,7 +113,7 @@ export default function CondominiumMapPage() {
       if (!ativo) return;
       const unidadesApi = unidadesResult.status === 'fulfilled' ? unidadesResult.value : [];
       const moradores = moradoresResult.status === 'fulfilled' ? moradoresResult.value : [];
-      const rascunho = lerRascunho();
+      const rascunho = modoDemonstracao ? null : lerRascunho();
       const mapaRecebido = mapaResult.status === 'fulfilled' ? mapaResult.value : rascunho?.mapa ?? mapaVazio();
       const tipoCondominio = mapaRecebido.tipo_condominio ?? 'vertical';
       const unidadesMapa = unidadesApi.map((unidade) => ({
@@ -140,7 +142,7 @@ export default function CondominiumMapPage() {
       if (moradoresResult.status === 'rejected') setAviso('Status de ocupação indisponível; exibindo as unidades sem atualização de moradores.');
     }).finally(() => { if (ativo) setLoading(false); });
     return () => { ativo = false; };
-  }, []);
+  }, [modoDemonstracao]);
 
   const totalBlocos = mapa.blocos.length || new Set(unidades.map((unidade) => unidade.bloco)).size;
   const areas = mapa.areas_comuns;
@@ -151,6 +153,10 @@ export default function CondominiumMapPage() {
     setMapa(mapaFinal);
     setTerrainWidth(mapaFinal.largura);
     setTerrainHeight(mapaFinal.altura);
+    if (modoDemonstracao) {
+      setAviso('Alteração temporária no mapa de demonstração.');
+      return;
+    }
     setSalvando(true);
     setAviso('');
     try {

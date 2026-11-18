@@ -26,7 +26,7 @@ const result = await build({
       export const useMemo = fn => fn();
       export const useCallback = fn => fn;
     ` : path === 'router' ? `export const useNavigate = () => path => globalThis.scheduler.paths.push(path); export const Link = 'a';`
-      : `export const Mail = 'mail'; export const Eye = 'eye'; export const EyeOff = 'eyeoff';` }));
+      : `export const Mail = 'mail'; export const Eye = 'eye'; export const EyeOff = 'eyeoff'; export const Building2 = 'building'; export const DoorOpen = 'door'; export const Map = 'map'; export const Package = 'package'; export const Play = 'play';` }));
   } }],
 });
 const lib = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
@@ -167,4 +167,15 @@ test('authorized tenant response establishes the original dashboard user after /
 test('request rejection is not mislabeled as an invalid OTP or expired session', async () => {
   globalThis.fetch = async () => json({ detail: 'Unauthorized' }, 401);
   await assert.rejects(lib.solicitarCadastroOtp(email, senha), error => error.status === 401 && /solicitar a verificação/.test(error.message));
+});
+
+test('demo uses local data and blocks server writes', async () => {
+  lib.definirDemonstracaoLocal(true);
+  try {
+    assert.deepEqual(await lib.listarMoradores(), []);
+    assert.equal((await lib.listarMapa()).blocos.length, 2);
+    await assert.rejects(lib.excluirUnidade(1), error => error.status === 403);
+  } finally {
+    lib.definirDemonstracaoLocal(false);
+  }
 });
