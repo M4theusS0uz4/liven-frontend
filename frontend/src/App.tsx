@@ -18,6 +18,7 @@ import SyndicDashboardPage from './pages/SyndicDashboardPage';
 import UnitsPage from './pages/UnitsPage';
 import VehiclesPage from './pages/VehiclesPage';
 import VisitsPage from './pages/VisitsPage';
+import VisitorGuidePage from './pages/VisitorGuidePage';
 
 const perfilLabel: Record<Perfil, string> = { morador: 'Morador', portaria: 'Portaria', sindico: 'Síndico' };
 type NavigationItem = { to: string; label: string; icon: LucideIcon };
@@ -97,4 +98,4 @@ export function Layout() {
     </Routes></main></div></div>;
 }
 
-export default function App() { return <BrowserRouter><Layout/></BrowserRouter>; }
+export default function App() { return <BrowserRouter><Routes><Route path="/guia" element={<VisitorGuidePage/>}/><Route path="*" element={<Layout/>}/></Routes></BrowserRouter>; }

@@ -1,3 +1,4 @@
+import ShareVisitorGuide from '../components/condominium/ShareVisitorGuide';
 import { useAuth } from '../context/AuthContext';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Building2, Trash2, X, LocateFixed, MousePointer2, MapPinned, Rotate3D, Search, ExternalLink, Crosshair, Home, Route, DoorOpen, Blocks, Move, Scaling, Check, Ruler, Grid3X3, Pencil } from 'lucide-react';
@@ -359,6 +360,7 @@ export default function CondominiumMapPage() {
     {erro && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{erro}</p>}
     {aviso && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">{salvando ? 'Salvando alterações...' : aviso}</p>}
     {loading ? <p className="text-slate-500">Carregando mapa...</p> : <>
+      <ShareVisitorGuide mapa={mapa} />
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4"><div className="glass rounded-xl p-4"><span className="flex items-center gap-2 text-xs font-bold text-slate-500"><Building2 size={15}/>{mapa.tipo_condominio === 'horizontal' ? 'Ruas e setores' : mapa.tipo_condominio === 'misto' ? 'Edifícios e setores' : 'Edifícios'}</span><strong className="mt-2 block text-2xl">{totalBlocos}</strong></div><div className="glass rounded-xl p-4"><span className="text-xs font-bold text-emerald-700">● Ocupadas</span><strong className="mt-2 block text-2xl">{resumo('ocupada')}</strong></div><div className="glass rounded-xl p-4"><span className="text-xs font-bold text-slate-500">● Vazias</span><strong className="mt-2 block text-2xl">{resumo('vazia')}</strong></div><div className="glass rounded-xl p-4"><span className="text-xs font-bold text-teal-700">Áreas comuns</span><strong className="mt-2 block text-2xl">{areas.length}</strong></div></div>
 
       {unidades.length === 0 && <div className="flex flex-col gap-3 rounded-xl border border-border bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm text-slate-600">Ainda não há residências cadastradas. Você pode montar as construções e áreas comuns da planta.</p><button type="button" onClick={() => { setEditMode(true); setEditTool('select'); setAxisLock('free'); setSelectedTarget(null); setTerrainWidth(mapa.largura); setTerrainHeight(mapa.altura); setCameraAction({ id: Date.now(), action: 'top' }); }} className="shrink-0 text-sm font-bold text-brand hover:underline">Começar a editar</button></div>}

@@ -9,7 +9,8 @@ export type FerramentaMapa = 'select' | 'move' | 'scale' | 'rotate' | 'house' | 
 export type EixoMapa = 'free' | 'x' | 'y';
 export type AlvoMapa = { kind: 'bloco' | 'unidade' | 'area' | 'rua' | 'portaria'; id: number };
 export type LocalReferenciaMapa = { latitude: number; longitude: number };
-type Props = { unidades: UnidadeMapa[]; mapa?: Mapa; localReferencia?: LocalReferenciaMapa | null; onReferenceLoaded?: () => void; onReferenceError?: () => void; onSelect?: (unidade: UnidadeMapa) => void; onPlace?: (x: number, y: number, tool?: FerramentaMapa) => void; placementMode?: boolean; editMode?: boolean; editTool?: FerramentaMapa; axisLock?: EixoMapa; selectedTarget?: AlvoMapa | null; onSelectTarget?: (target: AlvoMapa | null) => void; onTransformTarget?: (target: AlvoMapa, x: number, y: number, scaleX: number, scaleY: number, rotationDelta?: number) => void; cameraAction?: { id: number; action: 'fit' | 'top' | 'rotate' } | null };
+export type AcaoCamera = 'fit' | 'top' | 'rotate' | 'zoom-in' | 'zoom-out';
+type Props = { modoVisitante?: boolean; onRendererUnavailable?: () => void; unidades: UnidadeMapa[]; mapa?: Mapa; localReferencia?: LocalReferenciaMapa | null; onReferenceLoaded?: () => void; onReferenceError?: () => void; onSelect?: (unidade: UnidadeMapa) => void; onPlace?: (x: number, y: number, tool?: FerramentaMapa) => void; placementMode?: boolean; editMode?: boolean; editTool?: FerramentaMapa; axisLock?: EixoMapa; selectedTarget?: AlvoMapa | null; onSelectTarget?: (target: AlvoMapa | null) => void; onTransformTarget?: (target: AlvoMapa, x: number, y: number, scaleX: number, scaleY: number, rotationDelta?: number) => void; cameraAction?: { id: number; action: AcaoCamera } | null };
 
 const referenceCanvasCache = new Map<string, Promise<HTMLCanvasElement>>();
 const referenceZoom = 16;
@@ -121,7 +122,7 @@ function makeLabel(text: string, color: string) {
   return label;
 }
 
-export default function CondominiumMap({ unidades, mapa, localReferencia = null, onReferenceLoaded, onReferenceError, onSelect, onPlace, placementMode = false, editMode = false, editTool = 'select', axisLock = 'free', selectedTarget = null, onSelectTarget, onTransformTarget, cameraAction }: Props) {
+export default function CondominiumMap({ unidades, mapa, localReferencia = null, onReferenceLoaded, onReferenceError, onSelect, onPlace, placementMode = false, editMode = false, editTool = 'select', axisLock = 'free', selectedTarget = null, onSelectTarget, onTransformTarget, cameraAction, modoVisitante = false, onRendererUnavailable }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const selectedRef = useRef<UnidadeMapa | null>(null);
   const callbackRef = useRef(onSelect);
@@ -134,6 +135,8 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
   const selectTargetRef = useRef(onSelectTarget);
   const transformTargetRef = useRef(onTransformTarget);
   const editPlaceRef = useRef(onPlace);
+  const rendererUnavailableRef = useRef(onRendererUnavailable);
+  rendererUnavailableRef.current = onRendererUnavailable;
   const referenceLoadedRef = useRef(onReferenceLoaded);
   const referenceErrorRef = useRef(onReferenceError);
   callbackRef.current = onSelect;
@@ -157,7 +160,14 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf4f6f8);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 2000);
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true });
+    } catch (error) {
+      if (!rendererUnavailableRef.current) throw error;
+      rendererUnavailableRef.current();
+      return;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -274,7 +284,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
       status.userData.unitId = unit.id;
       markEditable(status, { kind: 'unidade', id: Number(unit.id) });
       world.add(status);
-      const label = makeLabel(unit.numero, '#344e49');
+      const label = makeLabel(modoVisitante ? `Destino · ${unit.numero}` : unit.numero, modoVisitante ? '#125948' : '#344e49');
       label.position.set(x, 2.15, z);
       markEditable(label, { kind: 'unidade', id: Number(unit.id) });
       world.add(label);
@@ -299,7 +309,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
           sector.position.set(x, -0.05, z);
           markEditable(sector, editTarget);
           world.add(sector);
-          const sectorLabel = makeLabel(block.nome, '#426447');
+          const sectorLabel = makeLabel(modoVisitante ? `Destino · ${block.nome}` : block.nome, modoVisitante ? '#125948' : '#426447');
           sectorLabel.position.set(x, 0.85, z - blockDepth / 2 - 0.7);
           markEditable(sectorLabel, editTarget);
           world.add(sectorLabel);
@@ -335,7 +345,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
             markEditable(line, editTarget);
             world.add(line);
           }
-          const label = makeLabel(block.nome, '#344e49');
+          const label = makeLabel(modoVisitante ? `Destino · ${block.nome}` : block.nome, modoVisitante ? '#125948' : '#344e49');
           label.position.set(x, blockHeight + 0.95, z);
           markEditable(label, editTarget);
           world.add(label);
@@ -382,7 +392,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
       barrier.position.set(x + 1.55, 0.55, z + 0.45);
       markEditable(barrier, { kind: 'portaria', id: portaria.id });
       world.add(barrier);
-      const label = makeLabel(portaria.nome, '#344e49');
+      const label = makeLabel(modoVisitante ? `Entrada · ${portaria.nome}` : portaria.nome, modoVisitante ? '#173d70' : '#344e49');
       label.position.set(x, 1.95, z);
       markEditable(label, { kind: 'portaria', id: portaria.id });
       world.add(label);
@@ -426,7 +436,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
         world.add(middle);
       }
 
-      const label = makeLabel(area.nome, '#34564d');
+      const label = makeLabel(modoVisitante ? `Destino · ${area.nome}` : area.nome, modoVisitante ? '#125948' : '#34564d');
       label.userData.areaId = area.id;
       label.position.set(x, 0.92, z);
       markEditable(label, { kind: 'area', id: area.id });
@@ -503,11 +513,15 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
       camera.position.set(Math.sin(yaw) * Math.cos(pitch) * distance, Math.sin(pitch) * distance, Math.cos(yaw) * Math.cos(pitch) * distance);
       camera.lookAt(0, 0, 0);
     };
+    const distanciaEnquadrada = () => Math.max(16, mapSpan * 1.55 * (modoVisitante ? Math.max(1, 1 / camera.aspect) : 1));
+    const limitarDistancia = (valor: number) => Math.max(mapSpan * 0.55, Math.min(Math.max(mapSpan * 3, distanciaEnquadrada()), valor));
     const cameraControl = (event: Event) => {
-      const action = (event as CustomEvent<{ action: 'fit' | 'top' | 'rotate' }>).detail?.action;
-      if (action === 'top') { yaw = 0; pitch = 1.5; distance = Math.max(16, mapSpan * 1.55); }
-      else if (action === 'rotate') { yaw = 0.65; pitch = 0.76; distance = Math.max(16, mapSpan * 1.55); }
-      else { distance = Math.max(16, mapSpan * 1.55); }
+      const action = (event as CustomEvent<{ action: AcaoCamera }>).detail?.action;
+      if (action === 'top') { yaw = 0; pitch = 1.5; distance = distanciaEnquadrada(); }
+      else if (action === 'rotate') { yaw = 0.65; pitch = 0.76; distance = distanciaEnquadrada(); }
+      else if (action === 'zoom-in') distance = limitarDistancia(distance / 1.25);
+      else if (action === 'zoom-out') distance = limitarDistancia(distance * 1.25);
+      else distance = distanciaEnquadrada();
       updateCamera();
     };
     const resize = () => {
@@ -628,7 +642,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
       dragging = false;
     };
     const wheel = (event: WheelEvent) => {
-      distance = Math.max(mapSpan * 0.55, Math.min(mapSpan * 3, distance + event.deltaY * 0.02));
+      distance = limitarDistancia(distance + event.deltaY * 0.02);
       updateCamera();
     };
     const click = (event: MouseEvent) => {
@@ -676,6 +690,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
     resize();
+    if (modoVisitante) distance = distanciaEnquadrada();
     updateCamera();
     let animationFrame = 0;
     const animate = () => {
@@ -716,7 +731,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
         }
       });
     };
-  }, [mapa, unidades, editMode, localReferencia]);
+  }, [mapa, unidades, editMode, localReferencia, modoVisitante]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -725,5 +740,5 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
   }, [cameraAction]);
 
   const cursorClass = placementMode ? 'cursor-crosshair' : editMode ? editTool === 'scale' ? 'cursor-nwse-resize' : editTool === 'move' ? 'cursor-move' : editTool === 'rotate' ? 'cursor-alias' : 'cursor-default' : 'cursor-grab active:cursor-grabbing';
-  return <canvas key={sceneKey} ref={canvasRef} className={`block h-[min(68vh,700px)] min-h-105 w-full touch-none ${cursorClass}`} aria-label={editMode ? 'Modo de edição do mapa 3D' : 'Mapa 3D interativo do condomínio'}/>;
+  return <canvas key={sceneKey} ref={canvasRef} className={`block w-full touch-none ${modoVisitante ? 'h-[min(57dvh,550px)] min-h-[280px]' : 'h-[min(68vh,700px)] min-h-105'} ${cursorClass}`} aria-label={editMode ? 'Modo de edição do mapa 3D' : 'Mapa 3D interativo do condomínio'}/>;
 }
