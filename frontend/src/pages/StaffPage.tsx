@@ -1,17 +1,17 @@
 import { Pencil, Plus, Shield, UserRoundCheck, X } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import RecordPhoto, { PhotoPicker } from '../components/RecordPhoto';
+import { lerEquipeDemo, salvarEquipeDemo } from '../lib/demo';
 import { useAuth } from '../context/AuthContext';
 import { atualizarPorteiro, atualizarStatusPorteiro, criarPorteiro, listarPorteiros, type Porteiro } from '../lib/api';
 import { dadosAlteracaoFoto, type AlteracaoFoto } from '../lib/photos';
 
 type PorteiroTela = Porteiro & { fotoDemo?: string };
-const equipeDemo: PorteiroTela[] = [{ id: 1, nome: 'Carlos Almeida', telefone: '(11) 98888-1212', turno: 'Manhã', ativo: true }];
 const turnos = ['Manhã', 'Tarde', 'Noite', '12x36'];
 
 export default function StaffPage() {
   const { modoDemonstracao } = useAuth();
-  const [porteiros, setPorteiros] = useState<PorteiroTela[]>(modoDemonstracao ? equipeDemo : []);
+  const [porteiros, setPorteiros] = useState<PorteiroTela[]>(() => modoDemonstracao ? lerEquipeDemo() : []);
   const [aberto, setAberto] = useState(false);
   const [editando, setEditando] = useState<PorteiroTela | null>(null);
   const [nome, setNome] = useState('');
@@ -21,6 +21,10 @@ export default function StaffPage() {
   const [carregando, setCarregando] = useState(!modoDemonstracao);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    if (modoDemonstracao) salvarEquipeDemo(porteiros);
+  }, [modoDemonstracao, porteiros]);
 
   useEffect(() => {
     if (modoDemonstracao) return;

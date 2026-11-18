@@ -1,6 +1,6 @@
 import type { Mapa, TipoCondominio } from './api';
 
-type Ponto = { x: number; y: number };
+export type Ponto = { x: number; y: number };
 type Entrada = Ponto & { nome: string };
 type Construcao = Entrada & { largura: number; altura: number; rotacao: number };
 type Bloco = Construcao & { andares: number };

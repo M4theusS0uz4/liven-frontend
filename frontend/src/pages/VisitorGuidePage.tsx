@@ -1,11 +1,14 @@
-import { Building2, Compass, Crosshair, DoorOpen, MapPin, Minus, Plus, Rotate3D } from 'lucide-react';
+import { Building2, Compass, Route, Crosshair, DoorOpen, MapPin, Minus, Plus, Rotate3D } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import CondominiumMap, { type AcaoCamera, type AlvoMapa, type UnidadeMapa } from '../components/condominium/CondominiumMap';
 import type { Mapa } from '../lib/api';
+import { calcularTrajeto } from '../lib/visitorRoute';
 import { lerFragmentoGuia, type GuiaVisitante } from '../lib/visitorGuide';
 
-function PlantaSimplificada({ guia }: { guia: GuiaVisitante }) {
+type Trajeto = ReturnType<typeof calcularTrajeto>;
+
+function PlantaSimplificada({ guia, trajeto }: { guia: GuiaVisitante; trajeto: Trajeto }) {
   const { entrada, destino, vias, entorno } = guia;
   const construcoes = [...(entorno?.blocos ?? []), ...(entorno?.areas ?? []), destino];
   const pontos = [entrada, destino, ...vias.flatMap((via) => via.pontos)];
@@ -33,6 +36,7 @@ function PlantaSimplificada({ guia }: { guia: GuiaVisitante }) {
             stroke="#647d80" strokeWidth={0.4}
           />
         ))}
+        {trajeto && <polyline points={trajeto.pontos.map(({ x, y }) => `${x},${y}`).join(' ')} fill="none" stroke="#00a080" strokeWidth={raio * 0.48} strokeLinejoin="round" strokeLinecap="round" />}
         {[entrada, destino].map(({ x, y }, index) => (
           <g key={index} transform={`translate(${x} ${y})`}>
             <circle r={raio} fill={index ? '#125948' : '#173d70'} />
@@ -45,9 +49,10 @@ function PlantaSimplificada({ guia }: { guia: GuiaVisitante }) {
   );
 }
 
-function Visualizacao({ guia }: { guia: GuiaVisitante }) {
+function Visualizacao({ guia, trajeto }: { guia: GuiaVisitante; trajeto: Trajeto }) {
   const [camera, setCamera] = useState<{ id: number; action: AcaoCamera } | null>(null);
   const [sem3D, setSem3D] = useState(false);
+  const [planta, setPlanta] = useState(false);
   const { destino, entrada } = guia;
   const { mapa, unidades, alvo } = useMemo(() => {
     const casa: UnidadeMapa = { id: '1', bloco: '', numero: destino.nome, andar: null, tipoResidencia: 'casa', status: 'vazia' };
@@ -77,14 +82,20 @@ function Visualizacao({ guia }: { guia: GuiaVisitante }) {
 
   return (
     <section className="min-w-0 overflow-hidden rounded-3xl border border-border bg-white" aria-label="Visualização do guia">
-      {sem3D ? (
+      {!sem3D && (
+        <div className="flex gap-2 border-b border-border bg-white p-3" aria-label="Formato do mapa">
+          <button type="button" aria-pressed={!planta} onClick={() => setPlanta(false)} className="rounded-lg px-3 py-2 text-sm font-semibold aria-pressed:bg-[#125948] aria-pressed:text-white">Mapa 3D</button>
+          <button type="button" aria-pressed={planta} onClick={() => setPlanta(true)} className="rounded-lg px-3 py-2 text-sm font-semibold aria-pressed:bg-[#125948] aria-pressed:text-white">Planta 2D</button>
+        </div>
+      )}
+      {sem3D || planta ? (
         <>
-          <p role="status" className="px-4 pt-4 text-sm text-slate-700">O 3D está indisponível. Veja a planta simplificada abaixo.</p>
-          <PlantaSimplificada guia={guia} />
+          {sem3D && <p role="status" className="px-4 pt-4 text-sm text-slate-700">O 3D está indisponível. Veja a planta 2D abaixo.</p>}
+          <PlantaSimplificada guia={guia} trajeto={trajeto} />
         </>
       ) : (
         <>
-          <CondominiumMap mapa={mapa} unidades={unidades} cameraAction={camera} modoVisitante destinoVisitante={alvo} onRendererUnavailable={() => setSem3D(true)} />
+          <CondominiumMap mapa={mapa} unidades={unidades} cameraAction={camera} modoVisitante destinoVisitante={alvo} trajetoVisitante={trajeto?.pontos} onRendererUnavailable={() => setSem3D(true)} />
           <div className="flex flex-wrap items-center gap-2 border-t border-border p-3">
             <button type="button" onClick={() => setCamera({ id: Date.now(), action: 'rotate' })} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold hover:bg-surface-hover">
               <Rotate3D size={17} aria-hidden="true" /> Vista 3D
@@ -109,6 +120,7 @@ function Visualizacao({ guia }: { guia: GuiaVisitante }) {
 export default function VisitorGuidePage() {
   const { hash } = useLocation();
   const guia = useMemo(() => lerFragmentoGuia(hash), [hash]);
+  const trajeto = useMemo(() => guia ? calcularTrajeto(guia) : null, [guia]);
 
   return (
     <main className="min-h-dvh bg-[#edf5f3] px-4 py-5 sm:px-8 sm:py-8">
@@ -131,9 +143,15 @@ export default function VisitorGuidePage() {
                   <dd className="mt-1 break-words font-bold">{guia.destino.nome}</dd>
                 </div>
               </dl>
-              <p className="mt-4 text-sm leading-relaxed text-slate-700">Use o mapa como referência e confirme o caminho a pé na portaria. O guia não libera o acesso.</p>
+              {trajeto ? (
+                <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50 px-3 py-3 text-teal-950">
+                  <p className="flex items-center gap-2 text-sm font-bold"><Route size={17} aria-hidden="true" /> Cerca de {Math.max(1, Math.round(trajeto.metros))} m pelas vias</p>
+                  <p className="mt-1 text-xs leading-relaxed">Siga o traçado verde até a referência mais próxima do destino.</p>
+                </div>
+              ) : <p className="mt-4 text-sm leading-relaxed text-slate-700">O mapa ainda não tem um caminho conectado entre estas referências. Confirme o percurso na portaria.</p>}
+              <p className="mt-3 text-xs text-slate-600">A portaria confirma a entrada e a acessibilidade do caminho.</p>
             </section>
-            <Visualizacao key={hash} guia={guia} />
+            <Visualizacao key={hash} guia={guia} trajeto={trajeto} />
           </div>
         ) : <p role="alert" className="rounded-2xl border border-border bg-white p-5 text-slate-800">O link está incompleto ou inválido. Peça um novo guia à pessoa que enviou a visita.</p>}
       </div>

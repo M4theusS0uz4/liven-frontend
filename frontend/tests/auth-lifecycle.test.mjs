@@ -172,7 +172,7 @@ test('request rejection is not mislabeled as an invalid OTP or expired session',
 test('demo uses local data and blocks server writes', async () => {
   lib.definirDemonstracaoLocal(true);
   try {
-    assert.deepEqual(await lib.listarMoradores(), []);
+    assert.ok((await lib.listarMoradores()).length > 0);
     assert.equal((await lib.listarMapa()).blocos.length, 2);
     await assert.rejects(lib.excluirUnidade(1), error => error.status === 403);
   } finally {

@@ -1,18 +1,103 @@
 import { Archive, Bell, Check, Plus, Send, X } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { listarComunicados, marcarComunicado, publicarComunicado, type Comunicado } from '../lib/api';
 
-type Comunicado = { id: number; titulo: string; mensagem: string; data: string; publicado: boolean };
-const inicial: Comunicado[] = [{ id: 1, titulo: 'Manutenção da área comum', mensagem: 'A piscina ficará fechada para manutenção neste sábado, das 8h às 12h.', data: 'Hoje', publicado: true }];
+const data = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium', timeStyle: 'short' });
 
 export default function AnnouncementsPage() {
   const { usuario } = useAuth();
   const podePublicar = usuario?.perfil === 'sindico';
-  const [comunicados, setComunicados] = useState(inicial);
+  const [comunicados, setComunicados] = useState<Comunicado[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState('');
   const [aberto, setAberto] = useState(false);
   const [titulo, setTitulo] = useState('');
   const [mensagem, setMensagem] = useState('');
-  const fechar = () => { setAberto(false); setTitulo(''); setMensagem(''); };
-  const publicar = (event: FormEvent) => { event.preventDefault(); if (!titulo.trim() || !mensagem.trim()) return; setComunicados((lista) => [{ id: Date.now(), titulo: titulo.trim(), mensagem: mensagem.trim(), data: 'Agora', publicado: true }, ...lista]); fechar(); };
-  return <section className="space-y-8"><header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-brand text-xs font-black tracking-[.25em]">CONDOMÍNIO</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">Comunicados</h1><p className="mt-2 text-slate-500">Informações importantes para todos os moradores.</p></div>{podePublicar && <button onClick={() => setAberto(true)} className="gradient-brand inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-black text-white"><Plus size={18}/>Novo comunicado</button>}</header><div className="space-y-3">{comunicados.filter((comunicado) => comunicado.publicado).map((comunicado) => <article key={comunicado.id} className="glass rounded-2xl p-5 sm:p-6"><div className="flex items-start justify-between gap-4"><div className="flex gap-3"><div className="rounded-xl bg-brand/10 p-3 text-brand"><Bell size={20}/></div><div><h2 className="text-lg font-black">{comunicado.titulo}</h2><p className="mt-1 text-xs font-bold text-slate-400">Publicado {comunicado.data}</p></div></div>{podePublicar && <button title="Arquivar comunicado" onClick={() => setComunicados((lista) => lista.map((item) => item.id === comunicado.id ? { ...item, publicado: false } : item))} className="rounded-lg p-2 text-slate-500 hover:bg-surface-hover"><Archive size={18}/></button>}</div><p className="mt-4 text-sm leading-relaxed text-slate-600">{comunicado.mensagem}</p></article>)}</div>{comunicados.every((comunicado) => !comunicado.publicado) && <div className="glass rounded-2xl p-10 text-center text-slate-500">Nenhum comunicado publicado.</div>}{aberto && <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-5"><form onSubmit={publicar} className="glass w-full max-w-md space-y-5 rounded-2xl p-6"><div className="flex items-center justify-between"><div><h2 className="text-xl font-black">Novo comunicado</h2><p className="mt-1 text-sm text-slate-500">A mensagem ficará visível para todos.</p></div><button type="button" onClick={fechar} className="rounded-lg p-2 text-slate-500 hover:bg-surface-hover"><X size={18}/></button></div><label className="block text-sm font-bold text-slate-700">Título<input required value={titulo} onChange={(event) => setTitulo(event.target.value)} className="mt-2 w-full rounded-xl border border-border bg-surface px-4 py-3 outline-none focus:border-brand" placeholder="Ex.: Aviso de manutenção" /></label><label className="block text-sm font-bold text-slate-700">Mensagem<textarea required value={mensagem} onChange={(event) => setMensagem(event.target.value)} rows={5} className="mt-2 w-full resize-none rounded-xl border border-border bg-surface px-4 py-3 outline-none focus:border-brand" placeholder="Escreva o comunicado" /></label><button className="gradient-brand flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 font-black text-white"><Send size={17}/>Publicar</button></form></div>}</section>;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    listarComunicados(controller.signal)
+      .then((itens) => { if (!controller.signal.aborted) setComunicados(itens); })
+      .catch((error: Error) => { if (!controller.signal.aborted) setErro(error.message); })
+      .finally(() => { if (!controller.signal.aborted) setCarregando(false); });
+    return () => controller.abort();
+  }, []);
+
+  const fechar = () => { setAberto(false); setTitulo(''); setMensagem(''); setErro(''); };
+  const publicar = async (event: FormEvent) => {
+    event.preventDefault();
+    if (ocupado || !titulo.trim() || !mensagem.trim()) return;
+    setOcupado(true);
+    setErro('');
+    try {
+      const item = await publicarComunicado(titulo.trim(), mensagem.trim());
+      setComunicados((lista) => [item, ...lista]);
+      fechar();
+    } catch (error) {
+      setErro((error as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const marcar = async (id: number, acao: 'ler' | 'arquivar') => {
+    setOcupado(true);
+    setErro('');
+    try {
+      const item = await marcarComunicado(id, acao);
+      setComunicados((lista) => acao === 'arquivar' ? lista.filter((atual) => atual.id !== id) : lista.map((atual) => atual.id === id ? item : atual));
+    } catch (error) {
+      setErro((error as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  return (
+    <section className="space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Comunicados</h1>
+          <p className="mt-2 text-sm text-slate-600">Avisos publicados para o seu condomínio.</p>
+        </div>
+        {podePublicar && <button disabled={carregando || ocupado} onClick={() => { setErro(''); setAberto(true); }} className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white disabled:opacity-60"><Plus size={18} /> Novo comunicado</button>}
+      </header>
+      {erro && !aberto && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{erro}</p>}
+      {carregando && <p role="status" className="text-sm text-slate-600">Carregando comunicados…</p>}
+      {!carregando && !erro && !comunicados.length && <p className="glass rounded-2xl p-6 text-sm text-slate-600">Nenhum comunicado publicado.</p>}
+      <div className="grid gap-3">
+        {comunicados.map((item) => (
+          <article key={item.id} className="glass rounded-2xl p-5">
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-brand"><Bell size={18} aria-hidden="true" /></span>
+              <div className="min-w-0 flex-1">
+                <h2 className="break-words text-lg font-bold">{item.titulo}</h2>
+                <time dateTime={item.created_at} className="text-xs text-slate-600">{data.format(new Date(item.created_at))}</time>
+              </div>
+              {podePublicar && <button disabled={ocupado} onClick={() => void marcar(item.id, 'arquivar')} aria-label={`Arquivar ${item.titulo}`} className="rounded-xl p-2 text-slate-700 hover:bg-surface-hover"><Archive size={18} /></button>}
+            </div>
+            <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-700">{item.mensagem}</p>
+            {item.lido_em
+              ? <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-teal-800"><Check size={15} aria-hidden="true" /> Lido</p>
+              : <button disabled={ocupado} onClick={() => void marcar(item.id, 'ler')} className="mt-3 rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-surface-hover">Marcar como lido</button>}
+          </article>
+        ))}
+      </div>
+      {aberto && (
+        <div className="fixed inset-0 z-30 grid place-items-center bg-slate-900/55 p-4">
+          <form onSubmit={publicar} aria-label="Novo comunicado" className="glass max-h-[90dvh] w-full max-w-md space-y-4 overflow-y-auto rounded-2xl p-5">
+            <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Novo comunicado</h2><button type="button" disabled={ocupado} onClick={fechar} aria-label="Fechar" className="rounded-lg p-2 hover:bg-surface-hover"><X size={18} /></button></div>
+            {erro && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{erro}</p>}
+            <fieldset disabled={ocupado} className="space-y-4">
+              <label className="block text-sm font-semibold">Título<input required minLength={2} maxLength={180} value={titulo} onChange={(event) => setTitulo(event.target.value)} className="mt-1 block w-full rounded-xl border border-border px-3 py-2.5" /></label>
+              <label className="block text-sm font-semibold">Mensagem<textarea required maxLength={20000} value={mensagem} onChange={(event) => setMensagem(event.target.value)} rows={5} className="mt-1 block w-full rounded-xl border border-border px-3 py-2.5" /></label>
+              <button className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white"><Send size={17} /> {ocupado ? 'Publicando…' : 'Publicar para todos'}</button>
+            </fieldset>
+          </form>
+        </div>
+      )}
+    </section>
+  );
 }

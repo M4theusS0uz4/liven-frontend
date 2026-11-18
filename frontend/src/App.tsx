@@ -1,12 +1,11 @@
 import { getSession as getStoredSession } from './lib/session';
 import { AlertTriangle, Bell, Building2, Car, DoorOpen, LogOut, Map, Menu, Package, Shield, Users, X } from 'lucide-react';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth, type Perfil } from './context/AuthContext';
 import AccessPage from './pages/AccessPage';
 import AnnouncementsPage from './pages/AnnouncementsPage';
-import CondominiumMapPage from './pages/CondominiumMapPage';
 import DeliveriesPage from './pages/DeliveriesPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -18,7 +17,12 @@ import SyndicDashboardPage from './pages/SyndicDashboardPage';
 import UnitsPage from './pages/UnitsPage';
 import VehiclesPage from './pages/VehiclesPage';
 import VisitsPage from './pages/VisitsPage';
-import VisitorGuidePage from './pages/VisitorGuidePage';
+const CondominiumMapPage = lazy(() => import('./pages/CondominiumMapPage'));
+const VisitorGuidePage = lazy(() => import('./pages/VisitorGuidePage'));
+
+function CarregandoMapa() {
+  return <p role="status" className="p-5 text-sm text-slate-600">Carregando o mapa…</p>;
+}
 
 const perfilLabel: Record<Perfil, string> = { morador: 'Morador', portaria: 'Portaria', sindico: 'Síndico' };
 type NavigationItem = { to: string; label: string; icon: LucideIcon };
@@ -82,14 +86,14 @@ export function Layout() {
       </header>
       <header className="app-header sticky top-0 z-30 lg:hidden"><div className="flex h-16 items-center justify-between px-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-lg bg-brand text-white"><Building2 size={19}/></span><Link to="/" onClick={fecharMenu} className="text-lg font-bold tracking-tight text-slate-900">Liven</Link></div><div className="flex items-center gap-2"><span className="hidden text-right sm:block"><strong className="block max-w-36 truncate text-sm text-slate-800">{nome}</strong><small className="text-xs text-slate-500">{perfilAtual}</small></span><button title={menuAberto ? 'Fechar menu' : 'Abrir menu'} aria-label={menuAberto ? 'Fechar menu' : 'Abrir menu'} aria-expanded={menuAberto} onClick={() => setMenuAberto((aberto) => !aberto)} className="grid size-10 place-items-center rounded-lg text-slate-600 transition hover:bg-surface-hover">{menuAberto ? <X size={20}/> : <Menu size={20}/>}</button></div></div>{menuAberto && <nav className="max-h-[calc(100dvh-64px)] overflow-y-auto border-t border-border bg-surface px-4 py-5 shadow-lg" aria-label="Navegação móvel"><NavigationSections groups={grupos} pathname={location.pathname} onNavigate={fecharMenu}/><button onClick={sair} className="mt-5 flex w-full items-center gap-3 rounded-lg border-t border-border px-3 py-4 text-sm font-semibold text-slate-600"><LogOut size={18}/>Sair da conta</button></nav>}</header>
 
-    <main className="mx-auto min-h-[calc(100vh-64px)] max-w-[1600px] p-4 sm:p-6 lg:min-h-[calc(100vh-76px)] xl:p-8">{modoDemonstracao && <p role="status" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Modo demonstração ativo. O acesso é local e as alterações não são autenticadas nem salvas no backend.</p>}<Routes>
+    <main className="mx-auto min-h-[calc(100vh-64px)] max-w-[1600px] p-4 sm:p-6 lg:min-h-[calc(100vh-76px)] xl:p-8">{modoDemonstracao && <p role="status" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Modo demonstração · dados fictícios e alterações válidas nesta sessão.</p>}<Routes>
       <Route path="/" element={usuario ? usuario.perfil === 'sindico' ? <SyndicDashboardPage/> : <Dashboard/> : <WelcomePage/>}/>
       <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage/></ProtectedRoute>}/>
       <Route path="/occurrences" element={<ProtectedRoute><OccurrencesPage/></ProtectedRoute>}/>
       <Route path="/visits" element={<ProtectedRoute perfis={['morador']}><VisitsPage/></ProtectedRoute>}/>
       <Route path="/staff" element={<ProtectedRoute perfis={['sindico']}><StaffPage/></ProtectedRoute>}/>
       <Route path="/accesses" element={<ProtectedRoute perfis={['portaria', 'sindico']}><AccessPage/></ProtectedRoute>}/>
-      <Route path="/map" element={<ProtectedRoute perfis={['portaria', 'sindico']}><CondominiumMapPage/></ProtectedRoute>}/>
+      <Route path="/map" element={<ProtectedRoute perfis={['portaria', 'sindico']}><Suspense fallback={<CarregandoMapa/>}><CondominiumMapPage/></Suspense></ProtectedRoute>}/>
       <Route path="/units" element={<ProtectedRoute perfis={['portaria', 'sindico']}><UnitsPage/></ProtectedRoute>}/>
       <Route path="/residents" element={<ProtectedRoute perfis={['portaria', 'sindico']}><ResidentsPage/></ProtectedRoute>}/>
       <Route path="/vehicles" element={<ProtectedRoute perfis={['portaria', 'sindico']}><VehiclesPage/></ProtectedRoute>}/>
@@ -98,4 +102,4 @@ export function Layout() {
     </Routes></main></div></div>;
 }
 
-export default function App() { return <BrowserRouter><Routes><Route path="/guia" element={<VisitorGuidePage/>}/><Route path="*" element={<Layout/>}/></Routes></BrowserRouter>; }
+export default function App() { return <BrowserRouter><Routes><Route path="/guia" element={<Suspense fallback={<CarregandoMapa/>}><VisitorGuidePage/></Suspense>}/><Route path="*" element={<Layout/>}/></Routes></BrowserRouter>; }

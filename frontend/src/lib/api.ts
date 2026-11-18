@@ -1,11 +1,12 @@
 import { getSession, sessionRevision, setSession, validTokens } from './session';
 import { normalizarEmail } from './otp';
+import { reiniciarDemo, responderDemo } from './demo';
 export const API_URL = (import.meta.env?.VITE_API_URL ?? '/api/v1').replace(/\/$/, '');
 const API_TIMEOUT_MS = 10000;
-const colecoesDemonstracao = new Set(['/unidades', '/moradores', '/entregas', '/veiculos']);
 let demonstracaoLocal = false;
 
 export function definirDemonstracaoLocal(ativa: boolean) {
+  if (ativa && !demonstracaoLocal) reiniciarDemo();
   demonstracaoLocal = ativa;
 }
 
@@ -180,8 +181,9 @@ export function renovarSessao(): Promise<AuthResponse> {
 export async function apiRequest(path: string, options: RequestOptions = {}) {
   const { authenticated = true, retryAuth = true, ...init } = options;
   if (demonstracaoLocal && authenticated) {
+    const resposta = responderDemo(path, init.method ?? 'GET', typeof init.body === 'string' ? init.body : undefined);
+    if (resposta !== undefined) return resposta;
     if (!init.method || init.method === 'GET') {
-      if (colecoesDemonstracao.has(path)) return [];
       if (path === '/condominio/mapa') {
         return {
           id: 0,
@@ -357,6 +359,24 @@ export const atualizarVeiculo = (id: number, payload: VeiculoInput) => apiReques
 export const excluirVeiculo = (id: number) => apiRequest(`/veiculos/${id}`, { method: 'DELETE' }) as Promise<void>;
 export const criarEntrega = (payload: EntregaInput) => apiRequest('/entregas', { method: 'POST', body: JSON.stringify(payload) }) as Promise<Entrega>;
 export const atualizarStatusEntrega = (id: number, status: StatusEntrega) => apiRequest(`/entregas/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }) as Promise<Entrega>;
+
+export type Comunicado = { id: number; titulo: string; mensagem: string; created_at: string; lido_em: string | null };
+export const listarComunicados = (signal?: AbortSignal) => apiRequest('/comunicados', { signal }) as Promise<Comunicado[]>;
+export const publicarComunicado = (titulo: string, mensagem: string) =>
+  apiRequest('/comunicados', { method: 'POST', body: JSON.stringify({ titulo, mensagem }) }) as Promise<Comunicado>;
+export const marcarComunicado = (id: number, acao: 'ler' | 'arquivar') =>
+  apiRequest(`/comunicados/${id}/${acao}`, { method: 'POST' }) as Promise<Comunicado>;
+
+export type StatusOcorrencia = 'aberta' | 'em_analise' | 'resolvida';
+export type PrioridadeOcorrencia = 'normal' | 'alta' | 'urgente';
+export type CategoriaOcorrencia = 'manutencao' | 'seguranca' | 'limpeza' | 'barulho' | 'outro';
+export type OcorrenciaInput = { titulo: string; descricao: string; categoria: CategoriaOcorrencia; prioridade: PrioridadeOcorrencia };
+export type Ocorrencia = OcorrenciaInput & { id: number; status: StatusOcorrencia; unidade_id: number; created_at: string };
+export const listarOcorrencias = (signal?: AbortSignal) => apiRequest('/ocorrencias', { signal }) as Promise<Ocorrencia[]>;
+export const criarOcorrencia = (dados: OcorrenciaInput) =>
+  apiRequest('/ocorrencias', { method: 'POST', body: JSON.stringify(dados) }) as Promise<Ocorrencia>;
+export const atualizarStatusOcorrencia = (id: number, status: StatusOcorrencia) =>
+  apiRequest(`/ocorrencias/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }) as Promise<Ocorrencia>;
 
 export type PainelSindico = {
   total_unidades: number;

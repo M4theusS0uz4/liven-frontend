@@ -10,7 +10,7 @@ export type EixoMapa = 'free' | 'x' | 'y';
 export type AlvoMapa = { kind: 'bloco' | 'unidade' | 'area' | 'rua' | 'portaria'; id: number };
 export type LocalReferenciaMapa = { latitude: number; longitude: number };
 export type AcaoCamera = 'fit' | 'top' | 'rotate' | 'zoom-in' | 'zoom-out';
-type Props = { modoVisitante?: boolean; destinoVisitante?: AlvoMapa; onRendererUnavailable?: () => void; unidades: UnidadeMapa[]; mapa?: Mapa; localReferencia?: LocalReferenciaMapa | null; onReferenceLoaded?: () => void; onReferenceError?: () => void; onSelect?: (unidade: UnidadeMapa) => void; onPlace?: (x: number, y: number, tool?: FerramentaMapa) => void; placementMode?: boolean; editMode?: boolean; editTool?: FerramentaMapa; axisLock?: EixoMapa; selectedTarget?: AlvoMapa | null; onSelectTarget?: (target: AlvoMapa | null) => void; onTransformTarget?: (target: AlvoMapa, x: number, y: number, scaleX: number, scaleY: number, rotationDelta?: number) => void; cameraAction?: { id: number; action: AcaoCamera } | null };
+type Props = { trajetoVisitante?: readonly { x: number; y: number }[]; modoVisitante?: boolean; destinoVisitante?: AlvoMapa; onRendererUnavailable?: () => void; unidades: UnidadeMapa[]; mapa?: Mapa; localReferencia?: LocalReferenciaMapa | null; onReferenceLoaded?: () => void; onReferenceError?: () => void; onSelect?: (unidade: UnidadeMapa) => void; onPlace?: (x: number, y: number, tool?: FerramentaMapa) => void; placementMode?: boolean; editMode?: boolean; editTool?: FerramentaMapa; axisLock?: EixoMapa; selectedTarget?: AlvoMapa | null; onSelectTarget?: (target: AlvoMapa | null) => void; onTransformTarget?: (target: AlvoMapa, x: number, y: number, scaleX: number, scaleY: number, rotationDelta?: number) => void; cameraAction?: { id: number; action: AcaoCamera } | null };
 
 const referenceCanvasCache = new Map<string, Promise<HTMLCanvasElement>>();
 const referenceZoom = 16;
@@ -122,7 +122,7 @@ function makeLabel(text: string, color: string) {
   return label;
 }
 
-export default function CondominiumMap({ unidades, mapa, localReferencia = null, onReferenceLoaded, onReferenceError, onSelect, onPlace, placementMode = false, editMode = false, editTool = 'select', axisLock = 'free', selectedTarget = null, onSelectTarget, onTransformTarget, cameraAction, modoVisitante = false, destinoVisitante, onRendererUnavailable }: Props) {
+export default function CondominiumMap({ unidades, mapa, localReferencia = null, onReferenceLoaded, onReferenceError, onSelect, onPlace, placementMode = false, editMode = false, editTool = 'select', axisLock = 'free', selectedTarget = null, onSelectTarget, onTransformTarget, cameraAction, modoVisitante = false, destinoVisitante, trajetoVisitante, onRendererUnavailable }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const selectedRef = useRef<UnidadeMapa | null>(null);
   const callbackRef = useRef(onSelect);
@@ -261,6 +261,25 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
         world.add(joint);
       });
     });
+
+    if (trajetoVisitante?.length) {
+      const cor = new THREE.MeshBasicMaterial({ color: 0x00b994, toneMapped: false });
+      const raio = 0.135;
+      let anterior: THREE.Vector3 | undefined;
+      for (const ponto of trajetoVisitante) {
+        const atual = new THREE.Vector3(mapX(ponto.x), 0.23, mapZ(ponto.y));
+        const junta = new THREE.Mesh(new THREE.SphereGeometry(raio, 8, 6), cor);
+        junta.position.copy(atual);
+        world.add(junta);
+        if (anterior) {
+          const trecho = new THREE.Mesh(new THREE.CylinderGeometry(raio, raio, atual.distanceTo(anterior), 8), cor);
+          trecho.position.copy(atual).lerp(anterior, 0.5);
+          trecho.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), atual.clone().sub(anterior).normalize());
+          world.add(trecho);
+        }
+        anterior = atual;
+      }
+    }
 
     const ehDestino = (kind: AlvoMapa['kind'], id: number) =>
       modoVisitante && destinoVisitante?.kind === kind && destinoVisitante.id === id;
@@ -822,7 +841,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
         }
       });
     };
-  }, [mapa, unidades, editMode, localReferencia, modoVisitante, destinoVisitante]);
+  }, [mapa, unidades, editMode, localReferencia, modoVisitante, destinoVisitante, trajetoVisitante]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

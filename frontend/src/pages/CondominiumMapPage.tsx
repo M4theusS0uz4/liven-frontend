@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Building2, Trash2, X, LocateFixed, MousePointer2, MapPinned, Rotate3D, Search, ExternalLink, Crosshair, Home, Route, DoorOpen, Blocks, Move, Scaling, Check, Ruler, Grid3X3, Pencil } from 'lucide-react';
 import CondominiumMap, { type AlvoMapa, type EixoMapa, type FerramentaMapa, type UnidadeMapa } from '../components/condominium/CondominiumMap';
-import { atualizarMapa, listarMapa, listarMoradores, listarUnidades, type AreaComum, type Mapa, type TipoCondominio } from '../lib/api';
+import { ApiError, atualizarMapa, listarMapa, listarMoradores, listarUnidades, type AreaComum, type Mapa, type TipoCondominio } from '../lib/api';
 
 const MAP_DRAFT_KEY = 'liven-mapa-rascunho';
 const tiposArea = [
@@ -45,9 +45,9 @@ function ajustarTerrenoAoConteudo(mapa: Mapa, manterDimensoesAtuais = true): Map
   return { ...mapa, largura: Math.max(20, manterDimensoesAtuais ? mapa.largura : 20, Math.ceil(larguraNecessaria)), altura: Math.max(20, manterDimensoesAtuais ? mapa.altura : 20, Math.ceil(profundidadeNecessaria)) };
 }
 
-function lerRascunho(): MapDraft | null {
+function lerRascunho(chave: string): MapDraft | null {
   try {
-    const saved = localStorage.getItem(MAP_DRAFT_KEY);
+    const saved = localStorage.getItem(chave);
     if (!saved) return null;
     const parsed = JSON.parse(saved) as MapDraft | Mapa;
     if ('mapa' in parsed && parsed.mapa) return parsed as MapDraft;
@@ -62,14 +62,18 @@ function mapaVazio(): Mapa {
 }
 
 export default function CondominiumMapPage() {
-  const { modoDemonstracao } = useAuth();
+  const { modoDemonstracao, usuario } = useAuth();
+  const chaveRascunho = `${MAP_DRAFT_KEY}:${usuario?.condominio_id}:${usuario?.id}`;
   const [unidades, setUnidades] = useState<UnidadeMapa[]>([]);
   const [mapa, setMapa] = useState<Mapa>(mapaVazio);
   const [selecionada, setSelecionada] = useState<UnidadeMapa | null>(null);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const salvamentoAtivo = useRef(false);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
+  const [temRascunho, setTemRascunho] = useState(false);
+  const [rascunhoLegado, setRascunhoLegado] = useState<Mapa | null>(null);
   const [editorAberto, setEditorAberto] = useState(false);
   const [formArea, setFormArea] = useState<FormArea>({ nome: '', tipo: 'lazer', x: '', y: '' });
   const [modoPosicionamento, setModoPosicionamento] = useState(false);
@@ -114,7 +118,9 @@ export default function CondominiumMapPage() {
       if (!ativo) return;
       const unidadesApi = unidadesResult.status === 'fulfilled' ? unidadesResult.value : [];
       const moradores = moradoresResult.status === 'fulfilled' ? moradoresResult.value : [];
-      const rascunho = modoDemonstracao ? null : lerRascunho();
+      const rascunho = modoDemonstracao ? null : lerRascunho(chaveRascunho);
+      setTemRascunho(Boolean(rascunho?.pendente));
+      setRascunhoLegado(!modoDemonstracao && !rascunho?.pendente ? lerRascunho(MAP_DRAFT_KEY)?.mapa ?? null : null);
       const mapaRecebido = mapaResult.status === 'fulfilled' ? mapaResult.value : rascunho?.mapa ?? mapaVazio();
       const tipoCondominio = mapaRecebido.tipo_condominio ?? 'vertical';
       const unidadesMapa = unidadesApi.map((unidade) => ({
@@ -135,21 +141,22 @@ export default function CondominiumMapPage() {
         if (rascunho?.pendente) setAviso('Há alterações do mapa não sincronizadas neste navegador. Salve para enviá-las ao banco.');
       } else {
         setMapa(ajustarTerrenoAoConteudo(mapaRecebido));
-          if (mapaResult.reason instanceof Error && !mapaResult.reason.message.includes('recurso solicitado não foi encontrado')) {
-            setErro('Não foi possível carregar o mapa salvo no servidor. Você ainda pode editar a cópia disponível neste navegador.');
-          }
+        if (!(mapaResult.reason instanceof ApiError && mapaResult.reason.status === 404)) {
+          setErro('Não foi possível carregar o mapa salvo no servidor. Você ainda pode editar a cópia disponível neste navegador.');
+        }
       }
       if (unidadesResult.status === 'rejected') setErro('Não foi possível carregar as residências do condomínio.');
       if (moradoresResult.status === 'rejected') setAviso('Status de ocupação indisponível; exibindo as unidades sem atualização de moradores.');
     }).finally(() => { if (ativo) setLoading(false); });
     return () => { ativo = false; };
-  }, [modoDemonstracao]);
+  }, [modoDemonstracao, chaveRascunho]);
 
   const totalBlocos = mapa.blocos.length || new Set(unidades.map((unidade) => unidade.bloco)).size;
   const areas = mapa.areas_comuns;
   const resumo = (status: UnidadeMapa['status']) => unidades.filter((unidade) => unidade.status === status).length;
 
   const persistirMapa = async (novoMapa: Mapa) => {
+    if (salvamentoAtivo.current) return;
     const mapaFinal = ajustarTerrenoAoConteudo(novoMapa);
     setMapa(mapaFinal);
     setTerrainWidth(mapaFinal.largura);
@@ -158,29 +165,41 @@ export default function CondominiumMapPage() {
       setAviso('Alteração temporária no mapa de demonstração.');
       return;
     }
+    salvamentoAtivo.current = true;
     setSalvando(true);
-    setAviso('');
+    setErro('');
     try {
       const salvo = await atualizarMapa(mapaFinal);
-      if (salvo.tipo_condominio !== mapaFinal.tipo_condominio) throw new Error('O backend ainda não persiste a tipologia do condomínio.');
-      const preservouRotacoes = (mapaFinal.blocos ?? []).every((item) => (item.rotacao ?? 0) === ((salvo.blocos ?? []).find((saved) => saved.id === item.id)?.rotacao ?? 0))
-        && (mapaFinal.unidades ?? []).every((item) => (item.rotacao ?? 0) === ((salvo.unidades ?? []).find((saved) => saved.unidade_id === item.unidade_id)?.rotacao ?? 0))
-        && (mapaFinal.unidades ?? []).every((item) => Boolean(item.oculta) === Boolean((salvo.unidades ?? []).find((saved) => saved.unidade_id === item.unidade_id)?.oculta))
-        && (mapaFinal.areas_comuns ?? []).every((item) => (item.rotacao ?? 0) === ((salvo.areas_comuns ?? []).find((saved) => saved.id === item.id)?.rotacao ?? 0))
-        && (mapaFinal.portarias ?? []).every((item) => (item.rotacao ?? 0) === ((salvo.portarias ?? []).find((saved) => saved.id === item.id)?.rotacao ?? 0));
-      if (!preservouRotacoes) throw new Error('O backend não persiste a rotação dos elementos.');
-      setMapa({ ...salvo, tipo_condominio: salvo.tipo_condominio ?? mapaFinal.tipo_condominio ?? 'vertical' });
-      setErro('');
-      localStorage.removeItem(MAP_DRAFT_KEY);
+      setMapa(salvo);
+      setTemRascunho(false);
+      setSelectedTarget(null);
+      try { localStorage.removeItem(chaveRascunho); } catch { /* The server confirmed the save. */ }
       setAviso('Alterações do mapa salvas no banco de dados.');
     } catch (error) {
-      localStorage.setItem(MAP_DRAFT_KEY, JSON.stringify({ mapa: mapaFinal, pendente: true } satisfies MapDraft));
-      setAviso(error instanceof Error && error.message.includes('rotação')
-        ? 'Rotações salvas neste navegador. Para sincronizá-las entre dispositivos, o backend precisa suportar a orientação dos objetos.'
-        : 'Alterações salvas neste navegador. O backend não confirmou todos os dados do mapa.');
+      setTemRascunho(true);
+      try {
+        localStorage.setItem(chaveRascunho, JSON.stringify({ mapa: mapaFinal, pendente: true } satisfies MapDraft));
+        setAviso('Rascunho guardado neste navegador. Use “Sincronizar planta” para tentar de novo.');
+      } catch {
+        setAviso('O navegador não conseguiu guardar o rascunho. Sincronize antes de sair desta tela.');
+      }
+      setErro((error as Error).message);
     } finally {
+      salvamentoAtivo.current = false;
       setSalvando(false);
     }
+  };
+
+  const recuperarRascunhoLegado = () => {
+    if (!rascunhoLegado) return;
+    const recuperado = ajustarTerrenoAoConteudo({ ...rascunhoLegado, id: mapa.id });
+    setMapa(recuperado);
+    setTerrainWidth(recuperado.largura);
+    setTerrainHeight(recuperado.altura);
+    setSelectedTarget(null);
+    setTemRascunho(true);
+    setRascunhoLegado(null);
+    setAviso('Confira se a planta recuperada corresponde ao seu condomínio antes de sincronizar.');
   };
 
   const adicionarArea = async (event: FormEvent) => {
@@ -358,13 +377,21 @@ export default function CondominiumMapPage() {
     </header>
 
     {erro && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{erro}</p>}
-    {aviso && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">{salvando ? 'Salvando alterações...' : aviso}</p>}
+    {salvando && <p role="status" className="text-sm text-slate-700">Salvando alterações…</p>}
+    {rascunhoLegado && !temRascunho && (
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-white p-3 text-sm">
+        <p className="flex-1 text-slate-700">Este navegador tem um rascunho de uma versão anterior.</p>
+        <button type="button" onClick={recuperarRascunhoLegado} className="rounded-lg border border-border px-3 py-2 font-semibold hover:bg-surface-hover">Revisar rascunho antigo</button>
+      </div>
+    )}
+    {temRascunho && <button type="button" disabled={salvando} onClick={() => void persistirMapa(mapa)} className="rounded-xl bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-60">Sincronizar planta</button>}
+    {aviso && !salvando && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">{aviso}</p>}
     {loading ? <p className="text-slate-500">Carregando mapa...</p> : <>
       <ShareVisitorGuide mapa={mapa} />
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4"><div className="glass rounded-xl p-4"><span className="flex items-center gap-2 text-xs font-bold text-slate-500"><Building2 size={15}/>{mapa.tipo_condominio === 'horizontal' ? 'Ruas e setores' : mapa.tipo_condominio === 'misto' ? 'Edifícios e setores' : 'Edifícios'}</span><strong className="mt-2 block text-2xl">{totalBlocos}</strong></div><div className="glass rounded-xl p-4"><span className="text-xs font-bold text-emerald-700">● Ocupadas</span><strong className="mt-2 block text-2xl">{resumo('ocupada')}</strong></div><div className="glass rounded-xl p-4"><span className="text-xs font-bold text-slate-500">● Vazias</span><strong className="mt-2 block text-2xl">{resumo('vazia')}</strong></div><div className="glass rounded-xl p-4"><span className="text-xs font-bold text-teal-700">Áreas comuns</span><strong className="mt-2 block text-2xl">{areas.length}</strong></div></div>
 
       {unidades.length === 0 && <div className="flex flex-col gap-3 rounded-xl border border-border bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm text-slate-600">Ainda não há residências cadastradas. Você pode montar as construções e áreas comuns da planta.</p><button type="button" onClick={() => { setEditMode(true); setEditTool('select'); setAxisLock('free'); setSelectedTarget(null); setTerrainWidth(mapa.largura); setTerrainHeight(mapa.altura); setCameraAction({ id: Date.now(), action: 'top' }); }} className="shrink-0 text-sm font-bold text-brand hover:underline">Começar a editar</button></div>}
-      <div className="glass overflow-hidden rounded-2xl">
+      <div inert={salvando} aria-busy={salvando} className="glass overflow-hidden rounded-2xl">
         <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
           <div><div className="flex items-center gap-2"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/10 text-brand"><MapPinned size={18}/></span><div><h2 className="font-black">Editor da planta 3D</h2><p className="text-xs text-slate-500">Organize residências e áreas comuns visualmente.</p></div></div></div>
           <div className="flex flex-wrap items-center gap-2">

@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { ArrowDownToLine, ArrowRight, Car, Check, Clock3, DoorOpen, QrCode, ScanFace, Search, ShieldCheck, UserRound, UserRoundCheck, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowRight, Car, Check, Clock3, DoorOpen, MapPin, QrCode, ScanFace, Search, ShieldCheck, UserRound, UserRoundCheck, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import FacialCapture from '../components/FacialCapture';
 import RecordPhoto, { PhotoPicker } from '../components/RecordPhoto';
 import { prepararFoto, type AlteracaoFoto } from '../lib/photos';
 import QrScanner from '../components/QrScanner';
 import { atualizarMorador, listarMoradores, listarUnidades, listarVeiculos, type Morador, type Unidade, type Veiculo } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import { lerVisitasDemo, salvarVisitasDemo } from '../lib/demo';
 import { carregarVisitas, salvarVisitas, type VisitAccess, type VisitAccessStatus } from '../lib/visits';
 
 type Aba = 'visitas' | 'moradores' | 'veiculos';
@@ -12,8 +15,9 @@ const statusLabel: Record<VisitAccessStatus, string> = { authorized: 'Autorizada
 const statusStyle: Record<VisitAccessStatus, string> = { authorized: 'bg-emerald-50 text-emerald-700', inside: 'bg-blue-50 text-blue-700', exited: 'bg-slate-100 text-slate-600', denied: 'bg-red-50 text-red-700' };
 
 export default function AccessPage() {
+  const { modoDemonstracao } = useAuth();
   const [aba, setAba] = useState<Aba>('visitas');
-  const [visitas, setVisitas] = useState<VisitAccess[]>(() => carregarVisitas() ?? []);
+  const [visitas, setVisitas] = useState<VisitAccess[]>(() => modoDemonstracao ? lerVisitasDemo() : carregarVisitas() ?? []);
   const [moradores, setMoradores] = useState<Morador[]>([]);
   const [unidades, setUnidades] = useState<Unidade[]>([]);
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
@@ -40,12 +44,13 @@ export default function AccessPage() {
 
   useEffect(() => {
     try {
-      salvarVisitas(visitas);
+      if (modoDemonstracao) salvarVisitasDemo(visitas);
+      else salvarVisitas(visitas);
       setErroLocal('');
     } catch {
       setErroLocal('O navegador não conseguiu guardar as visitas. Alterações podem ser perdidas ao recarregar.');
     }
-  }, [visitas]);
+  }, [visitas, modoDemonstracao]);
 
   useEffect(() => {
     Promise.allSettled([listarMoradores(), listarUnidades(), listarVeiculos()]).then(([moradoresResult, unidadesResult, veiculosResult]) => {
@@ -112,7 +117,7 @@ export default function AccessPage() {
   const abas: { id: Aba; label: string; icon: typeof UserRound }[] = [{ id: 'visitas', label: 'Visitantes', icon: UserRound }, { id: 'moradores', label: 'Moradores', icon: UserRoundCheck }, { id: 'veiculos', label: 'Veículos', icon: Car }];
 
   return <section className="space-y-7">
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-brand text-xs font-black tracking-[.25em]">OPERAÇÃO DA PORTARIA</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">Controle de acessos</h1><p className="mt-2 text-slate-500">Confira autorizações e registre movimentações do condomínio.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => { setQrAberto((aberto) => !aberto); setCodigoLido(''); }} className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-bold text-slate-700"><QrCode size={17}/>{qrAberto ? 'Fechar leitor' : 'Ler com câmera'}</button><button onClick={() => { setFotoManual(undefined); setErroManual(''); setModalManual(true); }} className="gradient-brand inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-black text-white"><DoorOpen size={17}/>Liberar visitante</button></div></header>
+    <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-brand text-xs font-black tracking-[.25em]">OPERAÇÃO DA PORTARIA</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">Controle de acessos</h1><p className="mt-2 text-slate-500">Confira autorizações e registre movimentações do condomínio.</p></div><div className="flex flex-wrap gap-2"><Link to="/map" className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-bold text-slate-700"><MapPin size={17} aria-hidden="true"/>Gerar guia 3D</Link><button onClick={() => { setQrAberto((aberto) => !aberto); setCodigoLido(''); }} className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-bold text-slate-700"><QrCode size={17}/>{qrAberto ? 'Fechar leitor' : 'Ler com câmera'}</button><button onClick={() => { setFotoManual(undefined); setErroManual(''); setModalManual(true); }} className="gradient-brand inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-black text-white"><DoorOpen size={17}/>Liberar visitante</button></div></header>
 
     {erroLocal && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{erroLocal}</p>}
     <div className="grid gap-3 sm:grid-cols-3"><div className="glass rounded-xl p-4"><span className="flex items-center gap-2 text-sm font-bold text-slate-500"><Clock3 size={16}/>Aguardando entrada</span><strong className="mt-2 block text-2xl">{visitas.filter((item) => item.status === 'authorized').length}</strong></div><div className="glass rounded-xl p-4"><span className="flex items-center gap-2 text-sm font-bold text-slate-500"><DoorOpen size={16}/>Dentro do condomínio</span><strong className="mt-2 block text-2xl">{visitas.filter((item) => item.status === 'inside').length}</strong></div><div className="glass rounded-xl p-4"><span className="flex items-center gap-2 text-sm font-bold text-slate-500"><ShieldCheck size={16}/>Moradores ativos</span><strong className="mt-2 block text-2xl">{moradores.filter((item) => item.ativo).length}</strong></div></div>

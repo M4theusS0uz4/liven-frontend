@@ -138,3 +138,12 @@ Na consulta local desta implementação não havia usuários ativos. Portanto lo
 
 
 A migração `20261110_0008` do backend precisa ser aplicada pelo operador antes de usar este frontend. Nenhuma migration foi aplicada nesta alteração. Consulte `backend/docs/OTP.md` no repositório backend para provisionamento explícito, Resend e credenciais. O serviço real exige remetente/domínio verificado e configuração do servidor; o mock local não envia mensagens.
+
+## Roteiro para o Techday
+
+1. Abra o Liven em `localhost` no modo de desenvolvimento e escolha **Acessar modo demonstração**. O painel usa o mesmo conjunto de exemplo que as telas de portaria e entregas.
+2. Entre em **Controle de acessos**. Veja o convite de Helena Duarte e registre a entrada. Volte ao painel para conferir a atualização do contador.
+3. Use **Gerar guia 3D**, selecione **Portaria** e **Torre Ipê**, e abra o guia em outra aba. Mostre o trajeto em 3D e em **Planta 2D**. Para testar em outro aparelho, gere o link a partir de um endereço que ele alcance.
+4. Na **Central de acompanhamento**, avance uma ocorrência para resolvida e registre a retirada de uma encomenda. Volte ao painel para mostrar os indicadores atualizados.
+
+O trajeto usa vias desenhadas e conectadas na planta e termina no ponto da via próximo ao destino. Quando as referências não têm ligação na planta, o guia mostra a entrada e o destino e orienta o visitante a consultar a portaria.

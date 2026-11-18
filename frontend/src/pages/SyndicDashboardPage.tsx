@@ -4,19 +4,6 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { obterPainelSindico, type PainelSindico } from '../lib/api';
 
-const painelDemo: PainelSindico = {
-  total_unidades: 48,
-  unidades_ocupadas: 46,
-  moradores_ativos: 112,
-  porteiros_ativos: 6,
-  entregas_pendentes: 14,
-  ocorrencias_abertas: 3,
-  ocorrencias_em_analise: 2,
-  ocorrencias_resolvidas: 8,
-  comunicados_ativos: 2,
-  acessos_hoje: 37,
-};
-
 const numeros = new Intl.NumberFormat('pt-BR');
 const percentuais = new Intl.NumberFormat('pt-BR', { style: 'percent' });
 const dataLonga = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full' });
@@ -32,7 +19,7 @@ export default function SyndicDashboardPage() {
   } | null>(null);
 
   useEffect(() => {
-    if (!contexto || modoDemonstracao) return;
+    if (!contexto) return;
     const controller = new AbortController();
     obterPainelSindico(controller.signal).then(
       (dados) => {
@@ -46,8 +33,8 @@ export default function SyndicDashboardPage() {
   }, [contexto, modoDemonstracao, atualizacao]);
 
   const respostaAtual = resultado?.contexto === contexto && resultado.atualizacao === atualizacao;
-  const dados = modoDemonstracao ? painelDemo : respostaAtual ? resultado.dados : null;
-  const carregando = !modoDemonstracao && !respostaAtual;
+  const dados = respostaAtual ? resultado.dados : null;
+  const carregando = !respostaAtual;
   const erro = !carregando && !dados;
   const ocupacao = dados?.total_unidades ? dados.unidades_ocupadas / dados.total_unidades : null;
   const nome = usuario?.nome.trim().split(/\s+/)[0];
@@ -60,7 +47,7 @@ export default function SyndicDashboardPage() {
   ];
   const pendencias = [
     { titulo: 'Ocorrências abertas ou em análise', detalhe: 'Acompanhe o atendimento', total: dados && dados.ocorrencias_abertas + dados.ocorrencias_em_analise, icon: AlertCircle, to: '/occurrences', cor: 'bg-amber-50 text-amber-800' },
-    { titulo: 'Entregas aguardando retirada', detalhe: 'Consulte as encomendas na portaria', total: dados?.entregas_pendentes, icon: Package, to: '/deliveries', cor: 'bg-blue-50 text-blue-700' },
+    { titulo: 'Entregas aguardando retirada', detalhe: 'Consulte as encomendas na portaria', total: dados?.entregas_pendentes, icon: Package, to: '/deliveries?status=pendentes', cor: 'bg-blue-50 text-blue-700' },
     { titulo: 'Comunicados ativos', detalhe: 'Gerencie avisos aos moradores', total: dados?.comunicados_ativos, icon: Bell, to: '/announcements', cor: 'bg-violet-50 text-violet-700' },
   ];
 
