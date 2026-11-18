@@ -161,8 +161,9 @@
   .operations-hero {
     background-color: #10263d;
     background-image:
-      radial-gradient(ellipse at 93% 0%, rgb(46 120 172 / 45%), transparent 64%),
-      repeating-linear-gradient(124deg, transparent 0 33px, rgb(186 230 253 / 6%) 34px 35px);
+      radial-gradient(ellipse at 100% 0%, #174844, transparent 68%),
+      radial-gradient(circle, rgb(191 229 221 / 13%) 1px, transparent 1.5px);
+    background-size: auto, 20px 20px;
   }
 }
 
@@ -206,4 +207,19 @@
   background-image:
     radial-gradient(ellipse at 10% 90%, rgb(34 130 155 / 48%), transparent 68%),
     repeating-linear-gradient(120deg, transparent 0 48px, rgb(186 230 253 / 9%) 49px 50px);
+}
+
+/* Pair the dark surface and its text without relying on legacy translucent utilities. */
+.operations-secondary {
+  border: 1px solid #7a9aab;
+}
+
+.operations-secondary:hover {
+  background: #254b5a;
+}
+
+@media (forced-colors: active) {
+  .occupation-ring {
+    border: 1px solid CanvasText;
+  }
 }
