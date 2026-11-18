@@ -301,3 +301,19 @@ export const atualizarVeiculo = (id: number, payload: VeiculoInput) => apiReques
 export const excluirVeiculo = (id: number) => apiRequest(`/veiculos/${id}`, { method: 'DELETE' }) as Promise<void>;
 export const criarEntrega = (payload: EntregaInput) => apiRequest('/entregas', { method: 'POST', body: JSON.stringify(payload) }) as Promise<Entrega>;
 export const atualizarStatusEntrega = (id: number, status: StatusEntrega) => apiRequest(`/entregas/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }) as Promise<Entrega>;
+
+export type PainelSindico = {
+  total_unidades: number;
+  unidades_ocupadas: number;
+  moradores_ativos: number;
+  porteiros_ativos: number;
+  entregas_pendentes: number;
+  ocorrencias_abertas: number;
+  ocorrencias_em_analise: number;
+  ocorrencias_resolvidas: number;
+  comunicados_ativos: number;
+  acessos_hoje: number;
+};
+
+export const obterPainelSindico = (signal?: AbortSignal) =>
+  apiRequest('/dashboard/sindico', { signal }) as Promise<PainelSindico>;

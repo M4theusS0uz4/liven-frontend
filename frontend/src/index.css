@@ -156,3 +156,47 @@
   }
 }
 
+
+@layer components {
+  .operations-hero {
+    background-color: #10263d;
+    background-image:
+      radial-gradient(ellipse at 93% 0%, rgb(46 120 172 / 45%), transparent 64%),
+      repeating-linear-gradient(124deg, transparent 0 33px, rgb(186 230 253 / 6%) 34px 35px);
+  }
+}
+
+.desktop-sidebar nav h2,
+.sidebar-account small {
+  color: #a8bfd6;
+}
+
+.desktop-sidebar nav a,
+.sidebar-account button {
+  color: #d8e5f1;
+}
+
+.desktop-sidebar nav a:hover,
+.sidebar-account button:hover {
+  background: rgb(255 255 255 / 9%);
+  color: white;
+}
+
+.desktop-sidebar nav a[aria-current="page"],
+.sidebar-account div > span:first-child {
+  background: #254b6a;
+  color: #d2ecff;
+}
+
+.desktop-sidebar nav a[aria-current="page"] span:last-child {
+  background: #7dd3fc;
+}
+
+.sidebar-account strong {
+  color: white;
+}
+
+.desktop-sidebar :focus-visible,
+.operations-hero :focus-visible {
+  outline-color: #7dd3fc;
+}
