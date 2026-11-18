@@ -189,9 +189,21 @@ export async function apiRequest(path: string, options: RequestOptions = {}) {
             { id: 1, nome: 'Torre Ipê', x: 30, y: 34, largura: 20, altura: 18, andares: 6 },
             { id: 2, nome: 'Torre Araucária', x: 84, y: 34, largura: 20, altura: 18, andares: 8 },
           ],
-          ruas: [{ id: 1, nome: 'Via interna', largura: 6, pontos: [{ x: 12, y: 66 }, { x: 108, y: 66 }] }],
-          areas_comuns: [],
-          portarias: [{ id: 1, nome: 'Portaria', x: 12, y: 58 }],
+          ruas: [
+            { id: 1, nome: 'Via interna', largura: 6, pontos: [
+              { x: 12, y: 65 }, { x: 30, y: 65 }, { x: 60, y: 65 }, { x: 84, y: 65 },
+              { x: 106, y: 65 }, { x: 106, y: 17 }, { x: 84, y: 17 }, { x: 60, y: 17 }, { x: 30, y: 17 },
+              { x: 12, y: 17 }, { x: 12, y: 65 },
+            ] },
+            { id: 2, nome: 'Acesso ao jardim', largura: 3, pontos: [{ x: 60, y: 65 }, { x: 60, y: 39 }, { x: 60, y: 17 }] },
+            { id: 3, nome: 'Acessos às torres', largura: 3, pontos: [{ x: 30, y: 43 }, { x: 30, y: 65 }] },
+            { id: 4, nome: 'Acesso à Araucária', largura: 3, pontos: [{ x: 84, y: 43 }, { x: 84, y: 65 }] },
+          ],
+          areas_comuns: [
+            { id: 1, nome: 'Jardim central', tipo: 'jardim', x: 57, y: 44, largura: 16, altura: 19 },
+            { id: 2, nome: 'Praça de convivência', tipo: 'lazer', x: 64, y: 30, largura: 13, altura: 15 },
+          ],
+          portarias: [{ id: 1, nome: 'Portaria', x: 12, y: 65 }],
         } satisfies Mapa;
       }
     }

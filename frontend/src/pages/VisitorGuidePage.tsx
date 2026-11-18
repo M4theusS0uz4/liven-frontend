@@ -1,15 +1,16 @@
 import { Building2, Compass, Crosshair, DoorOpen, MapPin, Minus, Plus, Rotate3D } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import CondominiumMap, { type AcaoCamera, type UnidadeMapa } from '../components/condominium/CondominiumMap';
+import CondominiumMap, { type AcaoCamera, type AlvoMapa, type UnidadeMapa } from '../components/condominium/CondominiumMap';
 import type { Mapa } from '../lib/api';
 import { lerFragmentoGuia, type GuiaVisitante } from '../lib/visitorGuide';
 
 function PlantaSimplificada({ guia }: { guia: GuiaVisitante }) {
-  const { entrada, destino, vias } = guia;
+  const { entrada, destino, vias, entorno } = guia;
+  const construcoes = [...(entorno?.blocos ?? []), ...(entorno?.areas ?? []), destino];
   const pontos = [entrada, destino, ...vias.flatMap((via) => via.pontos)];
-  const largura = Math.max(guia.largura, ...pontos.map(({ x }) => x));
-  const altura = Math.max(guia.altura, ...pontos.map(({ y }) => y));
+  const largura = Math.max(guia.largura, ...pontos.map(({ x }) => x), ...construcoes.map((item) => item.x + Math.hypot(item.largura, item.altura) / 2));
+  const altura = Math.max(guia.altura, ...pontos.map(({ y }) => y), ...construcoes.map((item) => item.y + Math.hypot(item.largura, item.altura) / 2));
   const margem = Math.max(largura, altura) * 0.12;
   const raio = margem * 0.38;
   return (
@@ -22,7 +23,15 @@ function PlantaSimplificada({ guia }: { guia: GuiaVisitante }) {
       >
         <rect width={largura} height={altura} rx={raio / 2} fill="#fff" stroke="#a7b6bc" />
         {vias.map(({ pontos, largura }, index) => (
-          <polyline key={index} points={pontos.map(({ x, y }) => `${x},${y}`).join(' ')} fill="none" stroke="#a7b6bc" strokeWidth={largura} strokeLinejoin="round" />
+          <polyline key={index} points={pontos.map(({ x, y }) => `${x},${y}`).join(' ')} fill="none" stroke="#687c86" strokeWidth={largura} strokeLinejoin="round" strokeLinecap="round" />
+        ))}
+        {construcoes.map((item, index) => (
+          <rect key={index}
+            x={item.x - item.largura / 2} y={item.y - item.altura / 2} width={item.largura} height={item.altura}
+            transform={`rotate(${-item.rotacao} ${item.x} ${item.y})`}
+            fill={item === destino ? '#88bdb0' : 'andares' in item ? '#c1d1da' : '#bdd9bd'}
+            stroke="#647d80" strokeWidth={0.4}
+          />
         ))}
         {[entrada, destino].map(({ x, y }, index) => (
           <g key={index} transform={`translate(${x} ${y})`}>
@@ -40,23 +49,30 @@ function Visualizacao({ guia }: { guia: GuiaVisitante }) {
   const [camera, setCamera] = useState<{ id: number; action: AcaoCamera } | null>(null);
   const [sem3D, setSem3D] = useState(false);
   const { destino, entrada } = guia;
-  const { mapa, unidades } = useMemo(() => {
+  const { mapa, unidades, alvo } = useMemo(() => {
     const casa: UnidadeMapa = { id: '1', bloco: '', numero: destino.nome, andar: null, tipoResidencia: 'casa', status: 'vazia' };
     const mapa: Mapa = {
       id: 0,
       nome: 'Guia de visita',
-      tipo_condominio: destino.tipo === 'bloco' && destino.andares === 1 ? 'horizontal' : 'vertical',
+      tipo_condominio: guia.entorno?.tipo ?? (destino.tipo === 'bloco' && destino.andares === 1 ? 'horizontal' : 'vertical'),
       largura: guia.largura,
       altura: guia.altura,
-      blocos: destino.tipo === 'bloco' ? [{ ...destino, id: 1 }] : [],
+      blocos: [
+        ...(destino.tipo === 'bloco' ? [{ ...destino, id: 1 }] : []),
+        ...(guia.entorno?.blocos ?? []).map((bloco, index) => ({ ...bloco, id: index + 2 })),
+      ],
       unidades: destino.tipo === 'casa'
         ? [{ ...destino, id: 1, unidade_id: 1, bloco: '', numero: destino.nome, tipo_residencia: 'casa', status: 'vazia' }]
         : [],
-      areas_comuns: destino.tipo === 'area' ? [{ ...destino, tipo: 'lazer', id: 1 }] : [],
+      areas_comuns: [
+        ...(destino.tipo === 'area' ? [{ ...destino, tipo: destino.tipoArea ?? 'lazer', id: 1 }] : []),
+        ...(guia.entorno?.areas ?? []).map((area, index) => ({ ...area, id: index + 2 })),
+      ],
       portarias: [{ ...entrada, id: 1 }],
       ruas: guia.vias.map((via, id) => ({ ...via, id, nome: '' })),
     };
-    return { mapa, unidades: destino.tipo === 'casa' ? [casa] : [] };
+    const alvo: AlvoMapa = { kind: destino.tipo === 'casa' ? 'unidade' : destino.tipo, id: 1 };
+    return { mapa, unidades: destino.tipo === 'casa' ? [casa] : [], alvo };
   }, [guia, destino, entrada]);
 
   return (
@@ -68,7 +84,7 @@ function Visualizacao({ guia }: { guia: GuiaVisitante }) {
         </>
       ) : (
         <>
-          <CondominiumMap mapa={mapa} unidades={unidades} cameraAction={camera} modoVisitante onRendererUnavailable={() => setSem3D(true)} />
+          <CondominiumMap mapa={mapa} unidades={unidades} cameraAction={camera} modoVisitante destinoVisitante={alvo} onRendererUnavailable={() => setSem3D(true)} />
           <div className="flex flex-wrap items-center gap-2 border-t border-border p-3">
             <button type="button" onClick={() => setCamera({ id: Date.now(), action: 'rotate' })} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold hover:bg-surface-hover">
               <Rotate3D size={17} aria-hidden="true" /> Vista 3D
@@ -82,7 +98,7 @@ function Visualizacao({ guia }: { guia: GuiaVisitante }) {
             <button type="button" onClick={() => setCamera({ id: Date.now(), action: 'zoom-out' })} aria-label="Afastar" className="grid size-11 place-items-center rounded-xl border border-border hover:bg-surface-hover">
               <Minus size={19} aria-hidden="true" />
             </button>
-            <p className="px-1 text-xs text-slate-700">Arraste para girar o mapa.</p>
+            <p className="px-1 text-xs text-slate-700 max-sm:hidden">Arraste para girar o mapa.</p>
           </div>
         </>
       )}
@@ -105,13 +121,13 @@ export default function VisitorGuidePage() {
           <div className="grid items-start gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
             <section className="min-w-0 rounded-3xl border border-border bg-white p-5" aria-labelledby="guia-referencias">
               <h2 id="guia-referencias" className="flex items-center gap-2 font-bold"><Compass size={18} className="text-teal-800" aria-hidden="true" /> Referências da visita</h2>
-              <dl className="mt-4 space-y-4">
+              <dl className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-1 lg:gap-4">
                 <div className="rounded-xl bg-blue-50 px-3 py-2.5 text-blue-950">
-                  <dt className="flex items-center gap-2 text-xs font-semibold"><DoorOpen size={15} aria-hidden="true" /> Entrada</dt>
+                  <dt className="flex items-center gap-2 text-xs font-semibold"><DoorOpen size={15} aria-hidden="true" /> 1 · Entrada</dt>
                   <dd className="mt-1 break-words font-bold">{guia.entrada.nome}</dd>
                 </div>
                 <div className="rounded-xl bg-teal-50 px-3 py-2.5 text-teal-950">
-                  <dt className="flex items-center gap-2 text-xs font-semibold"><MapPin size={15} aria-hidden="true" /> Destino</dt>
+                  <dt className="flex items-center gap-2 text-xs font-semibold"><MapPin size={15} aria-hidden="true" /> 2 · Destino</dt>
                   <dd className="mt-1 break-words font-bold">{guia.destino.nome}</dd>
                 </div>
               </dl>

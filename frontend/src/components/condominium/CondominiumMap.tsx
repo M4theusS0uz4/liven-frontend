@@ -10,7 +10,7 @@ export type EixoMapa = 'free' | 'x' | 'y';
 export type AlvoMapa = { kind: 'bloco' | 'unidade' | 'area' | 'rua' | 'portaria'; id: number };
 export type LocalReferenciaMapa = { latitude: number; longitude: number };
 export type AcaoCamera = 'fit' | 'top' | 'rotate' | 'zoom-in' | 'zoom-out';
-type Props = { modoVisitante?: boolean; onRendererUnavailable?: () => void; unidades: UnidadeMapa[]; mapa?: Mapa; localReferencia?: LocalReferenciaMapa | null; onReferenceLoaded?: () => void; onReferenceError?: () => void; onSelect?: (unidade: UnidadeMapa) => void; onPlace?: (x: number, y: number, tool?: FerramentaMapa) => void; placementMode?: boolean; editMode?: boolean; editTool?: FerramentaMapa; axisLock?: EixoMapa; selectedTarget?: AlvoMapa | null; onSelectTarget?: (target: AlvoMapa | null) => void; onTransformTarget?: (target: AlvoMapa, x: number, y: number, scaleX: number, scaleY: number, rotationDelta?: number) => void; cameraAction?: { id: number; action: AcaoCamera } | null };
+type Props = { modoVisitante?: boolean; destinoVisitante?: AlvoMapa; onRendererUnavailable?: () => void; unidades: UnidadeMapa[]; mapa?: Mapa; localReferencia?: LocalReferenciaMapa | null; onReferenceLoaded?: () => void; onReferenceError?: () => void; onSelect?: (unidade: UnidadeMapa) => void; onPlace?: (x: number, y: number, tool?: FerramentaMapa) => void; placementMode?: boolean; editMode?: boolean; editTool?: FerramentaMapa; axisLock?: EixoMapa; selectedTarget?: AlvoMapa | null; onSelectTarget?: (target: AlvoMapa | null) => void; onTransformTarget?: (target: AlvoMapa, x: number, y: number, scaleX: number, scaleY: number, rotationDelta?: number) => void; cameraAction?: { id: number; action: AcaoCamera } | null };
 
 const referenceCanvasCache = new Map<string, Promise<HTMLCanvasElement>>();
 const referenceZoom = 16;
@@ -122,7 +122,7 @@ function makeLabel(text: string, color: string) {
   return label;
 }
 
-export default function CondominiumMap({ unidades, mapa, localReferencia = null, onReferenceLoaded, onReferenceError, onSelect, onPlace, placementMode = false, editMode = false, editTool = 'select', axisLock = 'free', selectedTarget = null, onSelectTarget, onTransformTarget, cameraAction, modoVisitante = false, onRendererUnavailable }: Props) {
+export default function CondominiumMap({ unidades, mapa, localReferencia = null, onReferenceLoaded, onReferenceError, onSelect, onPlace, placementMode = false, editMode = false, editTool = 'select', axisLock = 'free', selectedTarget = null, onSelectTarget, onTransformTarget, cameraAction, modoVisitante = false, destinoVisitante, onRendererUnavailable }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const selectedRef = useRef<UnidadeMapa | null>(null);
   const callbackRef = useRef(onSelect);
@@ -158,7 +158,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
     if (!canvas) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf4f6f8);
+    scene.background = new THREE.Color(modoVisitante ? 0xe7eeed : 0xf4f6f8);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 2000);
     let renderer: THREE.WebGLRenderer;
     try {
@@ -207,8 +207,8 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
     const groundHeight = Math.max(height * scale, 8);
     const mapSpan = Math.max(groundWidth, groundHeight);
 
-    const groundTopMaterial = makeMaterial(0xf8fafc);
-    const groundSideMaterial = makeMaterial(0xf1f5f7);
+    const groundTopMaterial = makeMaterial(modoVisitante ? 0xdde8d7 : 0xf8fafc);
+    const groundSideMaterial = makeMaterial(modoVisitante ? 0x8b9e8b : 0xf1f5f7);
     const ground = new THREE.Mesh(new THREE.BoxGeometry(groundWidth, 0.25, groundHeight), [groundSideMaterial, groundSideMaterial, groundTopMaterial, groundSideMaterial, groundSideMaterial, groundSideMaterial]);
     ground.position.y = -0.2;
     ground.receiveShadow = true;
@@ -216,7 +216,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
     const gridSize = Math.max(groundWidth, groundHeight);
     const grid = new THREE.GridHelper(gridSize, Math.max(10, Math.min(80, Math.round(gridSize))), 0xd7dfe5, 0xe7ecf0);
     grid.position.y = -0.065;
-    grid.visible = !localReferencia;
+    grid.visible = !localReferencia && !modoVisitante;
     world.add(grid);
     let referenceTexture: THREE.CanvasTexture | null = null;
     let referenceCancelled = false;
@@ -235,19 +235,40 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
       });
     }
 
-    const roadMaterial = makeMaterial(0xaebbc1);
-    (mapa?.ruas ?? []).forEach((rua) => rua.pontos.slice(0, -1).forEach((point, index) => {
-      const next = rua.pontos[index + 1];
-      const dx = next.x - point.x;
-      const dz = next.y - point.y;
-      const road = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(dx, dz) * scale, 0.08, rua.largura * scale), roadMaterial);
-      road.position.set(mapX((point.x + next.x) / 2), -0.04, mapZ((point.y + next.y) / 2));
-      road.rotation.y = -Math.atan2(dz, dx);
-      road.receiveShadow = true;
-      markEditable(road, { kind: 'rua', id: rua.id });
-      world.add(road);
-    }));
+    const roadMaterial = makeMaterial(modoVisitante ? 0x536974 : 0xaebbc1);
+    (mapa?.ruas ?? []).forEach((rua) => {
+      const roadWidth = rua.largura * scale;
+      const target: AlvoMapa = { kind: 'rua', id: rua.id };
+      rua.pontos.slice(0, -1).forEach((point, index) => {
+        const next = rua.pontos[index + 1];
+        const dx = next.x - point.x;
+        const dz = next.y - point.y;
+        const length = Math.hypot(dx, dz) * scale;
+        if (!length) return;
+        const road = new THREE.Mesh(new THREE.BoxGeometry(length, 0.08, roadWidth), roadMaterial);
+        road.position.set(mapX((point.x + next.x) / 2), -0.036, mapZ((point.y + next.y) / 2));
+        road.rotation.y = -Math.atan2(dz, dx);
+        road.receiveShadow = true;
+        markEditable(road, target);
+        world.add(road);
+      });
+      if (rua.pontos.length < 2) return;
+      const jointGeometry = new THREE.CylinderGeometry(roadWidth / 2, roadWidth / 2, 0.08, 20);
+      rua.pontos.forEach(({ x, y }) => {
+        const joint = new THREE.Mesh(jointGeometry, roadMaterial);
+        joint.position.set(mapX(x), -0.038, mapZ(y));
+        markEditable(joint, target);
+        world.add(joint);
+      });
+    });
 
+    const ehDestino = (kind: AlvoMapa['kind'], id: number) =>
+      modoVisitante && destinoVisitante?.kind === kind && destinoVisitante.id === id;
+    const guiaLabel = (text: string, color: string, principal: boolean) => {
+      const label = makeLabel(text, color);
+      if (modoVisitante && principal) label.scale.multiplyScalar(1.65);
+      return label;
+    };
     const unitById = new Map<string, UnidadeMapa>();
     const addUnit = (unit: UnidadeMapa, x: number, z: number, unitWidth = 1.8, unitDepth = 1.25, y = 0.85, editTarget?: AlvoMapa) => {
       unitById.set(unit.id, unit);
@@ -268,7 +289,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
       markEditable(walls, { kind: 'unidade', id: Number(unit.id) });
       walls.castShadow = true;
       world.add(walls);
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(houseWidth, houseDepth) * 0.78, 0.95, 4), makeMaterial(0x9b6049));
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(houseWidth, houseDepth) * 0.78, 0.95, 4), makeMaterial(ehDestino('unidade', Number(unit.id)) ? 0x087763 : 0x9b6049));
       roof.rotation.y = Math.PI / 4;
       roof.position.set(x, 1.48, z);
       roof.userData.unitId = unit.id;
@@ -284,7 +305,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
       status.userData.unitId = unit.id;
       markEditable(status, { kind: 'unidade', id: Number(unit.id) });
       world.add(status);
-      const label = makeLabel(modoVisitante ? `Destino · ${unit.numero}` : unit.numero, modoVisitante ? '#125948' : '#344e49');
+      const label = guiaLabel(ehDestino('unidade', Number(unit.id)) ? '2 · Destino' : unit.numero, ehDestino('unidade', Number(unit.id)) ? '#125948' : '#344e49', ehDestino('unidade', Number(unit.id)));
       label.position.set(x, 2.15, z);
       markEditable(label, { kind: 'unidade', id: Number(unit.id) });
       world.add(label);
@@ -294,6 +315,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
     if (blocks.length) {
       blocks.forEach((block, index) => {
         const editTarget: AlvoMapa = { kind: 'bloco', id: block.id };
+        const destaque = ehDestino('bloco', block.id);
         const unitsInBlock = unidadesVisiveis.filter((unit) => unit.bloco === block.nome);
         const horizontalArea = tipoCondominio === 'horizontal' || (tipoCondominio === 'misto' && (unitsInBlock.length ? unitsInBlock.every((unit) => unit.tipoResidencia === 'casa' || (!unit.tipoResidencia && unit.andar === null)) : block.andares <= 1));
         const houseUnits = tipoCondominio === 'misto' && !horizontalArea ? unitsInBlock.filter((unit) => unit.tipoResidencia === 'casa' || (!unit.tipoResidencia && unit.andar === null)) : [];
@@ -305,11 +327,11 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
         const x = mapX(block.x);
         const z = mapZ(block.y);
         if (horizontalArea) {
-          const sector = new THREE.Mesh(new THREE.BoxGeometry(blockWidth, 0.12, blockDepth), makeMaterial(0xa6c39b));
+          const sector = new THREE.Mesh(new THREE.BoxGeometry(blockWidth, 0.12, blockDepth), makeMaterial(destaque ? 0x76af9b : 0xa6c39b));
           sector.position.set(x, -0.05, z);
           markEditable(sector, editTarget);
           world.add(sector);
-          const sectorLabel = makeLabel(modoVisitante ? `Destino · ${block.nome}` : block.nome, modoVisitante ? '#125948' : '#426447');
+          const sectorLabel = guiaLabel(destaque ? '2 · Destino' : block.nome, destaque ? '#125948' : '#426447', destaque);
           sectorLabel.position.set(x, 0.85, z - blockDepth / 2 - 0.7);
           markEditable(sectorLabel, editTarget);
           world.add(sectorLabel);
@@ -321,18 +343,35 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
             addHouse(unit, unitX, unitZ, coordinates ? Math.max(1, coordinates.largura * scale) : Math.min(1.65, blockWidth / (perRow + 1)), coordinates ? Math.max(1, coordinates.altura * scale) : Math.min(1.35, blockDepth / (perRow + 1)));
           });
         } else {
-          const building = new THREE.Mesh(new THREE.BoxGeometry(blockWidth, blockHeight, blockDepth), makeMaterial(index % 2 ? 0xe7e4da : 0xf2eee4));
+          const building = new THREE.Mesh(new THREE.BoxGeometry(blockWidth, blockHeight, blockDepth), makeMaterial(modoVisitante ? destaque ? 0xa1cabb : 0xe0e7e9 : index % 2 ? 0xe7e4da : 0xf2eee4));
           building.position.set(x, blockHeight / 2 - 0.05, z);
           building.castShadow = true;
           building.receiveShadow = true;
           markEditable(building, editTarget);
           world.add(building);
 
-          const roof = new THREE.Mesh(new THREE.BoxGeometry(blockWidth + 0.28, 0.16, blockDepth + 0.28), makeMaterial(index % 2 ? 0x596f6c : 0x647977));
+          const roof = new THREE.Mesh(new THREE.BoxGeometry(blockWidth + 0.28, 0.16, blockDepth + 0.28), makeMaterial(destaque ? 0x087763 : modoVisitante ? 0x657e89 : index % 2 ? 0x596f6c : 0x647977));
           roof.position.set(x, blockHeight - 0.03, z);
           markEditable(roof, editTarget);
           roof.castShadow = true;
           world.add(roof);
+
+          if (modoVisitante) {
+            const windowMaterial = makeMaterial(destaque ? 0x32685f : 0x557985);
+            const frontBands = new THREE.InstancedMesh(new THREE.BoxGeometry(blockWidth * 0.76, 0.24, 0.03), windowMaterial, floors);
+            const sideBands = new THREE.InstancedMesh(new THREE.BoxGeometry(0.03, 0.24, blockDepth * 0.76), windowMaterial, floors);
+            const matrix = new THREE.Matrix4();
+            for (let floor = 0; floor < floors; floor += 1) {
+              const y = floor * 0.72 + 0.36;
+              frontBands.setMatrixAt(floor, matrix.makeTranslation(0, y, 0));
+              sideBands.setMatrixAt(floor, matrix.makeTranslation(0, y, 0));
+            }
+            frontBands.position.set(x, 0, z + blockDepth / 2 + 0.015);
+            sideBands.position.set(x + blockWidth / 2 + 0.015, 0, z);
+            markEditable(frontBands, editTarget);
+            markEditable(sideBands, editTarget);
+            world.add(frontBands, sideBands);
+          }
 
           const floorLineMaterial = new THREE.LineBasicMaterial({ color: 0xc2bfb6, transparent: true, opacity: 0.8 });
           for (let floor = 1; floor < floors; floor += 1) {
@@ -345,7 +384,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
             markEditable(line, editTarget);
             world.add(line);
           }
-          const label = makeLabel(modoVisitante ? `Destino · ${block.nome}` : block.nome, modoVisitante ? '#125948' : '#344e49');
+          const label = guiaLabel(destaque ? '2 · Destino' : block.nome, destaque ? '#125948' : '#344e49', destaque);
           label.position.set(x, blockHeight + 0.95, z);
           markEditable(label, editTarget);
           world.add(label);
@@ -384,7 +423,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
       booth.castShadow = true;
       markEditable(booth, { kind: 'portaria', id: portaria.id });
       world.add(booth);
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.16, 1.35), makeMaterial(0x287a68));
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.16, 1.35), makeMaterial(modoVisitante ? 0x25598c : 0x287a68));
       roof.position.set(x, 0.98, z);
       markEditable(roof, { kind: 'portaria', id: portaria.id });
       world.add(roof);
@@ -392,7 +431,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
       barrier.position.set(x + 1.55, 0.55, z + 0.45);
       markEditable(barrier, { kind: 'portaria', id: portaria.id });
       world.add(barrier);
-      const label = makeLabel(modoVisitante ? `Entrada · ${portaria.nome}` : portaria.nome, modoVisitante ? '#173d70' : '#344e49');
+      const label = guiaLabel(modoVisitante ? '1 · Entrada' : portaria.nome, modoVisitante ? '#173d70' : '#344e49', modoVisitante);
       label.position.set(x, 1.95, z);
       markEditable(label, { kind: 'portaria', id: portaria.id });
       world.add(label);
@@ -436,7 +475,18 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
         world.add(middle);
       }
 
-      const label = makeLabel(modoVisitante ? `Destino · ${area.nome}` : area.nome, modoVisitante ? '#125948' : '#34564d');
+      if (modoVisitante && kind === 'jardim') {
+        const crownGeometry = new THREE.IcosahedronGeometry(Math.min(areaWidth, areaDepth) * 0.11, 0);
+        const crownMaterial = makeMaterial(0x427b56);
+        for (const [dx, dz] of [[-0.3, -0.3], [0.28, -0.26], [-0.27, 0.27], [0.29, 0.32]]) {
+          const crown = new THREE.Mesh(crownGeometry, crownMaterial);
+          crown.position.set(x + dx * areaWidth, 0.75, z + dz * areaDepth);
+          markEditable(crown, { kind: 'area', id: area.id });
+          world.add(crown);
+        }
+      }
+
+      const label = guiaLabel(ehDestino('area', area.id) ? '2 · Destino' : area.nome, ehDestino('area', area.id) ? '#125948' : '#34564d', ehDestino('area', area.id));
       label.userData.areaId = area.id;
       label.position.set(x, 0.92, z);
       markEditable(label, { kind: 'area', id: area.id });
@@ -509,11 +559,46 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
     };
     if (editMode && selectedTarget) highlightTarget(selectedTarget);
 
+    const framePoints: THREE.Vector3[] = [];
+    const focus = new THREE.Vector3();
+    if (modoVisitante) {
+      const bounds = new THREE.Box3();
+      const objectBounds = new THREE.Box3();
+      world.updateMatrixWorld(true);
+      for (const object of world.children) {
+        if (object === grid) continue;
+        objectBounds.setFromObject(object);
+        if (objectBounds.isEmpty()) continue;
+        bounds.union(objectBounds);
+        for (const x of [objectBounds.min.x, objectBounds.max.x]) {
+          for (const y of [objectBounds.min.y, objectBounds.max.y]) {
+            for (const z of [objectBounds.min.z, objectBounds.max.z]) {
+              framePoints.push(new THREE.Vector3(x, y, z));
+            }
+          }
+        }
+      }
+      bounds.getCenter(focus);
+      focus.y *= 0.55;
+      framePoints.forEach((point) => point.sub(focus));
+    }
+    const cameraDirection = () => new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     const updateCamera = () => {
-      camera.position.set(Math.sin(yaw) * Math.cos(pitch) * distance, Math.sin(pitch) * distance, Math.cos(yaw) * Math.cos(pitch) * distance);
-      camera.lookAt(0, 0, 0);
+      camera.position.copy(cameraDirection().multiplyScalar(distance).add(focus));
+      camera.lookAt(focus);
     };
-    const distanciaEnquadrada = () => Math.max(16, mapSpan * 1.55 * (modoVisitante ? Math.max(1, 1 / camera.aspect) : 1));
+    const distanciaEnquadrada = () => {
+      if (!modoVisitante) return Math.max(16, mapSpan * 1.55);
+      const direction = cameraDirection();
+      const right = new THREE.Vector3(0, 1, 0).cross(direction).normalize();
+      const up = direction.clone().cross(right);
+      const vertical = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.88;
+      const horizontal = vertical * camera.aspect;
+      // Fit the whole terrain and its buildings into both axes of the viewport.
+      return Math.max(8, ...framePoints.map((point) => point.dot(direction) + Math.max(
+        Math.abs(point.dot(right)) / horizontal, Math.abs(point.dot(up)) / vertical,
+      )));
+    };
     const limitarDistancia = (valor: number) => Math.max(mapSpan * 0.55, Math.min(Math.max(mapSpan * 3, distanciaEnquadrada()), valor));
     const cameraControl = (event: Event) => {
       const action = (event as CustomEvent<{ action: AcaoCamera }>).detail?.action;
@@ -687,7 +772,13 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
     canvas.addEventListener('wheel', wheel, { passive: true });
     canvas.addEventListener('click', click);
     canvas.addEventListener('map-camera', cameraControl);
-    const observer = new ResizeObserver(resize);
+    const observer = new ResizeObserver(() => {
+      resize();
+      if (modoVisitante) {
+        distance = Math.max(distance, distanciaEnquadrada());
+        updateCamera();
+      }
+    });
     observer.observe(canvas);
     resize();
     if (modoVisitante) distance = distanciaEnquadrada();
@@ -696,7 +787,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
     const animate = () => {
       animationFrame = requestAnimationFrame(animate);
       world.children.forEach((child) => {
-        if (child.userData.unitId) child.position.y = child.userData.baseY + (selectedRef.current?.id === child.userData.unitId ? Math.sin(Date.now() * 0.006) * 0.12 : 0);
+        if (child.userData.unitId && typeof child.userData.baseY === 'number') child.position.y = child.userData.baseY + (selectedRef.current?.id === child.userData.unitId ? Math.sin(Date.now() * 0.006) * 0.12 : 0);
       });
       renderer.render(scene, camera);
     };
@@ -731,7 +822,7 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
         }
       });
     };
-  }, [mapa, unidades, editMode, localReferencia, modoVisitante]);
+  }, [mapa, unidades, editMode, localReferencia, modoVisitante, destinoVisitante]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -740,5 +831,5 @@ export default function CondominiumMap({ unidades, mapa, localReferencia = null,
   }, [cameraAction]);
 
   const cursorClass = placementMode ? 'cursor-crosshair' : editMode ? editTool === 'scale' ? 'cursor-nwse-resize' : editTool === 'move' ? 'cursor-move' : editTool === 'rotate' ? 'cursor-alias' : 'cursor-default' : 'cursor-grab active:cursor-grabbing';
-  return <canvas key={sceneKey} ref={canvasRef} className={`block w-full touch-none ${modoVisitante ? 'h-[min(57dvh,550px)] min-h-[280px]' : 'h-[min(68vh,700px)] min-h-105'} ${cursorClass}`} aria-label={editMode ? 'Modo de edição do mapa 3D' : 'Mapa 3D interativo do condomínio'}/>;
+  return <canvas key={sceneKey} ref={canvasRef} className={`block w-full touch-none ${modoVisitante ? 'h-[clamp(250px,88vw,360px)] sm:h-[min(57dvh,550px)]' : 'h-[min(68vh,700px)] min-h-105'} ${cursorClass}`} aria-label={editMode ? 'Modo de edição do mapa 3D' : 'Mapa 3D interativo do condomínio'}/>;
 }

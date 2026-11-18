@@ -19,7 +19,7 @@ export default function ShareVisitorGuide({ mapa }: { mapa: Mapa }) {
       <h2 id="compartilhar-guia" className="flex items-center gap-2 text-lg font-bold"><MapPin size={19} className="text-teal-800" aria-hidden="true" /> Guia 3D do visitante</h2>
       {temReferencias ? (
         <>
-          <p className="mt-2 text-sm text-slate-700">Escolha a portaria e o destino. Quem receber o link poderá ver essas referências e as vias da planta sem entrar no Liven.</p>
+          <p className="mt-2 text-sm text-slate-700">Escolha a portaria e o destino. Quem receber o link poderá ver a portaria escolhida, o destino, as vias, os edifícios e as áreas comuns da planta.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-semibold">Portaria de entrada
               <select value={entradaId} onChange={(event) => { setEntradaId(event.target.value); setCopiado(''); }} className="mt-1 block min-h-11 w-full rounded-xl border border-border bg-white px-3">
