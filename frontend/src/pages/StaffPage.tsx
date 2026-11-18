@@ -1,18 +1,124 @@
-import { Check, Pencil, Plus, Shield, Trash2, UserRound, X } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { Pencil, Plus, Shield, UserRoundCheck, X } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import RecordPhoto, { PhotoPicker } from '../components/RecordPhoto';
+import { useAuth } from '../context/AuthContext';
+import { atualizarPorteiro, atualizarStatusPorteiro, criarPorteiro, listarPorteiros, type Porteiro } from '../lib/api';
+import { dadosAlteracaoFoto, type AlteracaoFoto } from '../lib/photos';
 
-type Porteiro = { id: number; nome: string; telefone: string; turno: string; ativo: boolean };
-const inicial: Porteiro[] = [{ id: 1, nome: 'Carlos Almeida', telefone: '(11) 98888-1212', turno: 'Manhã', ativo: true }];
+type PorteiroTela = Porteiro & { fotoDemo?: string };
+const equipeDemo: PorteiroTela[] = [{ id: 1, nome: 'Carlos Almeida', telefone: '(11) 98888-1212', turno: 'Manhã', ativo: true }];
+const turnos = ['Manhã', 'Tarde', 'Noite', '12x36'];
 
 export default function StaffPage() {
-  const [porteiros, setPorteiros] = useState(inicial);
+  const { modoDemonstracao } = useAuth();
+  const [porteiros, setPorteiros] = useState<PorteiroTela[]>(modoDemonstracao ? equipeDemo : []);
   const [aberto, setAberto] = useState(false);
-  const [editando, setEditando] = useState<Porteiro | null>(null);
+  const [editando, setEditando] = useState<PorteiroTela | null>(null);
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [turno, setTurno] = useState('Manhã');
-  const limpar = () => { setAberto(false); setEditando(null); setNome(''); setTelefone(''); setTurno('Manhã'); };
-  const abrir = (porteiro?: Porteiro) => { setEditando(porteiro ?? null); setNome(porteiro?.nome ?? ''); setTelefone(porteiro?.telefone ?? ''); setTurno(porteiro?.turno ?? 'Manhã'); setAberto(true); };
-  const salvar = (event: FormEvent) => { event.preventDefault(); if (!nome.trim() || !telefone.trim()) return; if (editando) setPorteiros((lista) => lista.map((item) => item.id === editando.id ? { ...item, nome: nome.trim(), telefone, turno } : item)); else setPorteiros((lista) => [{ id: Date.now(), nome: nome.trim(), telefone, turno, ativo: true }, ...lista]); limpar(); };
-  return <section className="space-y-8"><header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-brand text-xs font-black tracking-[.25em]">EQUIPE</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">Porteiros</h1><p className="mt-2 text-slate-500">Gerencie a equipe responsável pela portaria.</p></div><button onClick={() => abrir()} className="gradient-brand inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-black text-white"><Plus size={18}/>Adicionar porteiro</button></header><div className="grid gap-4 sm:grid-cols-3"><div className="glass rounded-2xl p-5"><Shield className="text-brand"/><strong className="mt-4 block text-2xl">{porteiros.filter((item) => item.ativo).length}</strong><span className="text-sm text-slate-500">porteiros ativos</span></div><div className="glass rounded-2xl p-5"><Check className="text-emerald-600"/><strong className="mt-4 block text-2xl">{porteiros.length}</strong><span className="text-sm text-slate-500">cadastros totais</span></div></div><div className="grid gap-3 md:grid-cols-2">{porteiros.map((porteiro) => <article key={porteiro.id} className="glass flex items-center justify-between rounded-2xl p-5"><div className="flex items-center gap-3"><div className="rounded-xl bg-brand/10 p-3 text-brand"><UserRound size={20}/></div><div><h2 className="font-black">{porteiro.nome}</h2><p className="mt-1 text-sm text-slate-500">{porteiro.telefone} · Turno {porteiro.turno}</p><span className={`mt-2 inline-flex rounded-full px-2 py-1 text-xs font-bold ${porteiro.ativo ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{porteiro.ativo ? 'Ativo' : 'Inativo'}</span></div></div><div className="flex gap-1"><button title="Editar porteiro" onClick={() => abrir(porteiro)} className="rounded-lg p-2 text-slate-500 hover:bg-surface-hover"><Pencil size={17}/></button><button title={porteiro.ativo ? 'Desativar porteiro' : 'Ativar porteiro'} onClick={() => setPorteiros((lista) => lista.map((item) => item.id === porteiro.id ? { ...item, ativo: !item.ativo } : item))} className="rounded-lg p-2 text-slate-500 hover:bg-surface-hover"><Trash2 size={17}/></button></div></article>)}</div>{aberto && <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-5"><form onSubmit={salvar} className="glass w-full max-w-md space-y-5 rounded-2xl p-6"><div className="flex items-center justify-between"><h2 className="text-xl font-black">{editando ? 'Editar porteiro' : 'Adicionar porteiro'}</h2><button type="button" onClick={limpar} className="rounded-lg p-2 text-slate-500 hover:bg-surface-hover"><X size={18}/></button></div><label className="block text-sm font-bold text-slate-700">Nome<input required value={nome} onChange={(event) => setNome(event.target.value)} className="mt-2 w-full rounded-xl border border-border bg-surface px-4 py-3 outline-none focus:border-brand" /></label><label className="block text-sm font-bold text-slate-700">Telefone<input required value={telefone} onChange={(event) => setTelefone(event.target.value)} className="mt-2 w-full rounded-xl border border-border bg-surface px-4 py-3 outline-none focus:border-brand" /></label><label className="block text-sm font-bold text-slate-700">Turno<select value={turno} onChange={(event) => setTurno(event.target.value)} className="mt-2 w-full rounded-xl border border-border bg-surface px-4 py-3 outline-none focus:border-brand"><option>Manhã</option><option>Tarde</option><option>Noite</option><option>12x36</option></select></label><button className="gradient-brand w-full rounded-xl px-4 py-3 font-black text-white">Salvar porteiro</button></form></div>}</section>;
+  const [foto, setFoto] = useState<AlteracaoFoto>();
+  const [carregando, setCarregando] = useState(!modoDemonstracao);
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    if (modoDemonstracao) return;
+    const controller = new AbortController();
+    listarPorteiros(controller.signal)
+      .then((dados) => { if (!controller.signal.aborted) setPorteiros(dados); })
+      .catch((error: Error) => { if (!controller.signal.aborted) setErro(error.message); })
+      .finally(() => { if (!controller.signal.aborted) setCarregando(false); });
+    return () => controller.abort();
+  }, [modoDemonstracao]);
+
+  const abrir = (porteiro?: PorteiroTela) => {
+    setEditando(porteiro ?? null);
+    setNome(porteiro?.nome ?? '');
+    setTelefone(porteiro?.telefone ?? '');
+    setTurno(porteiro?.turno ?? 'Manhã');
+    setFoto(undefined);
+    setErro('');
+    setAberto(true);
+  };
+
+  const salvar = async (event: FormEvent) => {
+    event.preventDefault();
+    if (ocupado) return;
+    setOcupado(true);
+    setErro('');
+    try {
+      const alteracao = await dadosAlteracaoFoto(foto);
+      const dados = { nome: nome.trim(), telefone, turno };
+      const salvo: PorteiroTela = modoDemonstracao
+        ? { ...dados, id: editando?.id ?? Date.now(), ativo: editando?.ativo ?? true, fotoDemo: alteracao.foto === undefined ? editando?.fotoDemo : alteracao.foto ?? undefined }
+        : editando ? await atualizarPorteiro(editando.id, { ...dados, ...alteracao }) : await criarPorteiro({ ...dados, ...alteracao });
+      setPorteiros((lista) => editando ? lista.map((item) => item.id === salvo.id ? salvo : item) : [salvo, ...lista]);
+      setAberto(false);
+    } catch (error) {
+      setErro((error as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const alternarStatus = async (porteiro: PorteiroTela) => {
+    setOcupado(true);
+    setErro('');
+    try {
+      const atualizado = modoDemonstracao
+        ? { ...porteiro, ativo: !porteiro.ativo }
+        : await atualizarStatusPorteiro(porteiro.id, !porteiro.ativo);
+      setPorteiros((lista) => lista.map((item) => item.id === atualizado.id ? atualizado : item));
+    } catch (error) {
+      setErro((error as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  return (
+    <section className="space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div><h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Porteiros</h1><p className="mt-2 text-sm text-slate-600">Gerencie a equipe responsável pela portaria.</p></div>
+        <button disabled={carregando || ocupado} onClick={() => abrir()} className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white disabled:opacity-60"><Plus size={18} /> Adicionar porteiro</button>
+      </header>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="glass flex items-center gap-4 rounded-2xl p-4"><Shield className="text-brand" aria-hidden="true" /><div><strong className="block text-xl">{porteiros.filter((item) => item.ativo).length}</strong><span className="text-sm text-slate-600">Porteiros ativos</span></div></div>
+        <div className="glass flex items-center gap-4 rounded-2xl p-4"><UserRoundCheck className="text-teal-800" aria-hidden="true" /><div><strong className="block text-xl">{porteiros.length}</strong><span className="text-sm text-slate-600">Cadastros totais</span></div></div>
+      </div>
+      {erro && !aberto && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">{erro}</p>}
+      {carregando && <p role="status" className="text-sm text-slate-600">Carregando equipe…</p>}
+      {!carregando && !erro && !porteiros.length && <p className="glass rounded-2xl p-6 text-center text-sm text-slate-600">Nenhum porteiro cadastrado.</p>}
+      <div className="grid gap-3 xl:grid-cols-2">
+        {porteiros.map((porteiro) => (
+          <article key={porteiro.id} className="glass flex flex-wrap items-center gap-3 rounded-2xl p-4">
+            <RecordPhoto origem={{ colecao: 'porteiros', registro: porteiro }} fotoLocal={porteiro.fotoDemo} />
+            <div className="min-w-0 flex-1">
+              <h2 className="break-words font-bold">{porteiro.nome}</h2>
+              <p className="mt-1 text-sm text-slate-600">{porteiro.telefone} · {porteiro.turno}</p>
+              <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-xs font-bold ${porteiro.ativo ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>{porteiro.ativo ? 'Ativo' : 'Inativo'}</span>
+            </div>
+            <button disabled={ocupado} onClick={() => abrir(porteiro)} aria-label={`Editar ${porteiro.nome}`} className="rounded-lg p-3 text-slate-700 hover:bg-surface-hover"><Pencil size={17} /></button>
+            <button disabled={ocupado} onClick={() => void alternarStatus(porteiro)} className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-surface-hover">{porteiro.ativo ? 'Desativar' : 'Ativar'}</button>
+          </article>
+        ))}
+      </div>
+      {aberto && (
+        <div className="fixed inset-0 z-30 grid place-items-center bg-slate-900/55 p-4">
+          <form onSubmit={salvar} aria-labelledby="porteiro-form-titulo" className="glass max-h-[90dvh] w-full max-w-md space-y-4 overflow-y-auto rounded-2xl p-5">
+            <div className="flex items-center justify-between gap-2"><h2 id="porteiro-form-titulo" className="text-xl font-bold">{editando ? 'Editar porteiro' : 'Adicionar porteiro'}</h2><button type="button" disabled={ocupado} onClick={() => setAberto(false)} aria-label="Fechar" className="rounded-lg p-2 hover:bg-surface-hover"><X size={18} /></button></div>
+            {erro && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{erro}</p>}
+            <fieldset disabled={ocupado} className="min-w-0 space-y-4">
+              <label className="block text-sm font-semibold">Nome<input required minLength={2} maxLength={150} value={nome} onChange={(event) => setNome(event.target.value)} className="mt-1 w-full rounded-xl border border-border px-3 py-2.5" /></label>
+              <label className="block text-sm font-semibold">Telefone<input required type="tel" minLength={8} maxLength={25} value={telefone} onChange={(event) => setTelefone(event.target.value)} className="mt-1 w-full rounded-xl border border-border px-3 py-2.5" /></label>
+              <label className="block text-sm font-semibold">Turno<select value={turno} onChange={(event) => setTurno(event.target.value)} className="mt-1 w-full rounded-xl border border-border px-3 py-2.5">{[...new Set([...turnos, turno])].map((opcao) => <option key={opcao}>{opcao}</option>)}</select></label>
+              <PhotoPicker origem={editando && !modoDemonstracao ? { colecao: 'porteiros', registro: editando } : undefined} fotoLocal={editando?.fotoDemo} foto={foto} onChange={setFoto} />
+              <button className="w-full rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white disabled:opacity-60">{ocupado ? 'Salvando…' : 'Salvar porteiro'}</button>
+            </fieldset>
+          </form>
+        </div>
+      )}
+    </section>
+  );
 }

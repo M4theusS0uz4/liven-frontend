@@ -9,13 +9,18 @@ export function definirDemonstracaoLocal(ativa: boolean) {
   demonstracaoLocal = ativa;
 }
 
+export type RegistroComFoto = { id: number; tem_foto?: boolean };
+export type ColecaoFoto = 'moradores' | 'porteiros' | 'veiculos' | 'visitantes';
+export type Porteiro = RegistroComFoto & { nome: string; telefone: string; turno: string; ativo: boolean };
+export type PorteiroInput = { nome: string; telefone: string; turno: string; foto?: string | null };
+
 export type TipoResidencia = 'casa' | 'apartamento';
 export type Unidade = { bloco: string; numero: string; andar: number | null; tipo_residencia?: TipoResidencia; ativa: boolean; id: number; created_at: string };
 export type UnidadeInput = { bloco: string; numero: string; andar?: number | null; tipo_residencia?: TipoResidencia; ativa?: boolean };
-export type Morador = { unidade_id: number; nome: string; cpf: string | null; email: string | null; telefone: string | null; foto_facial_path: string | null; ativo: boolean; id: number; created_at: string };
-export type MoradorInput = { unidade_id: number; nome: string; cpf?: string | null; email?: string | null; telefone?: string | null; foto_facial_path?: string | null; ativo?: boolean };
-export type Veiculo = { id: number; morador_id: number; placa: string; marca: string | null; modelo: string; cor: string | null; vaga: string | null; ativo: boolean; created_at: string };
-export type VeiculoInput = { morador_id: number; placa: string; marca?: string | null; modelo: string; cor?: string | null; vaga?: string | null; ativo?: boolean };
+export type Morador = RegistroComFoto & { unidade_id: number; nome: string; cpf: string | null; email: string | null; telefone: string | null; foto_facial_path: string | null; ativo: boolean; created_at: string };
+export type MoradorInput = { foto?: string | null; unidade_id: number; nome: string; cpf?: string | null; email?: string | null; telefone?: string | null; foto_facial_path?: string | null; ativo?: boolean };
+export type Veiculo = RegistroComFoto & { morador_id: number; placa: string; marca: string | null; modelo: string; cor: string | null; vaga: string | null; ativo: boolean; created_at: string };
+export type VeiculoInput = { foto?: string | null; morador_id: number; placa: string; marca?: string | null; modelo: string; cor?: string | null; vaga?: string | null; ativo?: boolean };
 export type StatusEntrega = 'recebida' | 'notificada' | 'retirada' | 'devolvida';
 export type Entrega = { morador_id: number; codigo_retirada: string; transportadora: string | null; remetente: string | null; descricao: string | null; recebido_por: string | null; id: number; status: StatusEntrega; recebida_em: string; retirada_em: string | null };
 export type EntregaInput = { morador_id: number; codigo_retirada: string; transportadora?: string | null; remetente?: string | null; descricao?: string | null; recebido_por?: string | null };
@@ -324,6 +329,16 @@ export function validarUsuario(value: unknown): value is Usuario {
     && typeof user.nome === 'string' && typeof user.telefone === 'string'
     && ['morador', 'portaria', 'sindico'].includes(user.perfil) && user.ativo === true;
 }
+
+export const obterFotoCadastro = (colecao: ColecaoFoto, id: number, signal?: AbortSignal) =>
+  apiRequest(`/${colecao}/${id}/foto`, { signal }) as Promise<{ foto: string }>;
+export const listarPorteiros = (signal?: AbortSignal) => apiRequest('/porteiros', { signal }) as Promise<Porteiro[]>;
+export const criarPorteiro = (payload: PorteiroInput) =>
+  apiRequest('/porteiros', { method: 'POST', body: JSON.stringify(payload) }) as Promise<Porteiro>;
+export const atualizarPorteiro = (id: number, payload: PorteiroInput) =>
+  apiRequest(`/porteiros/${id}`, { method: 'PUT', body: JSON.stringify(payload) }) as Promise<Porteiro>;
+export const atualizarStatusPorteiro = (id: number, ativo: boolean) =>
+  apiRequest(`/porteiros/${id}/status`, { method: 'PATCH', body: JSON.stringify({ ativo }) }) as Promise<Porteiro>;
 
 export const listarUnidades = () => apiRequest('/unidades') as Promise<Unidade[]>;
 export const listarMoradores = () => apiRequest('/moradores') as Promise<Morador[]>;
